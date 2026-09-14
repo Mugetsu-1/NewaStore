@@ -30,24 +30,36 @@ def is_paypal_configured():
 
 
 def available_payment_methods():
-    """Checkout radio choices, omitting gateways with no credentials configured.
+    """Checkout radio choices, marking unconfigured gateways as disabled hints.
 
-    Keeps the storefront usable before Stripe/PayPal keys are added: the
-    unconfigured gateways never render and are rejected by form validation.
+    Each entry is a (value, label, disabled) tuple so the template can render
+    unavailable methods as disabled placeholders instead of silently dropping
+    them (keeps the checkout UI looking complete before keys are added).
     """
     methods = [
-        ('esewa', 'eSewa'),
-        ('khalti', 'Khalti'),
-        ('stripe', 'Credit/Debit Card (Stripe)'),
-        ('paypal', 'PayPal'),
-        ('cod', 'Cash on Delivery'),
-        ('bank_transfer', 'Bank Transfer'),
+        ('esewa', 'eSewa', False),
+        ('khalti', 'Khalti', False),
+        ('stripe', 'Credit/Debit Card (Stripe)', False),
+        ('paypal', 'PayPal', False),
+        ('cod', 'Cash on Delivery', False),
+        ('bank_transfer', 'Bank Transfer', False),
     ]
     if not is_stripe_configured():
-        methods = [m for m in methods if m[0] != 'stripe']
+        methods = [m if m[0] != 'stripe' else (m[0], m[1], True) for m in methods]
     if not is_paypal_configured():
-        methods = [m for m in methods if m[0] != 'paypal']
+        methods = [m if m[0] != 'paypal' else (m[0], m[1], True) for m in methods]
     return methods
+
+
+def _available_payment_method_choices():
+    """Form-compatible version: only selectable (enabled) gateways become choices.
+
+    Disabled/unconfigured gateways still mention in the field's help text so the
+    user sees they exist but are not turned on yet.
+    """
+    all_ = available_payment_methods()
+    enabled = [(v, l) for (v, l, d) in all_ if not d]
+    return enabled
 
 
 # ---------------------------------------------------------------

@@ -396,6 +396,11 @@ class Cart(models.Model):
     def total(self):
         return self.subtotal - self.discount_amount
 
+    def is_all_digital(self):
+        """True when every item in the cart is a digital product (no shipping needed)."""
+        items = list(self.items.all())
+        return bool(items) and all(not item.product.requires_shipping for item in items)
+
 
 class CartItem(models.Model):
     cart = models.ForeignKey(Cart, on_delete=models.CASCADE, related_name='items')

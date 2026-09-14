@@ -1,0 +1,18 @@
+{% load store_extras %}<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="font-family:Arial,sans-serif;background:#f4f6f8;padding:24px;color:#111">
+<div style="max-width:600px;margin:auto;background:#fff;border-radius:12px;overflow:hidden">
+  <div style="background:#16a34a;padding:24px;color:#fff">
+    <h1 style="margin:0;font-size:22px">New Contact Message</h1>
+    <p style="margin:6px 0 0">From {{ name }} &lt;{{ email }}&gt;</p>
+  </div>
+  <div style="padding:24px">
+    <p><strong>Subject:</strong> {{ subject }}</p>
+    <p><strong>Message:</strong></p>
+    <div style="background:#f8fafc;padding:16px;border-radius:8px;border-left:4px solid #16a34a">{{ message|linebreaks }}</div>
+    <p style="margin-top:20px;font-size:.85rem;color:#666">Received at {{ timestamp|default:"now" }}</p>
+  </div>
+</div>
+</body>
+</html>

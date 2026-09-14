@@ -2,7 +2,7 @@ from django import forms
 from django.contrib.auth.forms import UserCreationForm, UserChangeForm, PasswordResetForm
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
-from .payments import available_payment_methods
+from .payments import available_payment_methods, _available_payment_method_choices
 from .models import (
     Product, ProductImage, ProductVariant, Review, Category, Tag,
     Coupon, Address, Cart, CartItem, Wishlist, WishlistItem,
@@ -306,8 +306,34 @@ class CheckoutForm(forms.Form):
         self.cart = kwargs.pop('cart', None)
         super().__init__(*args, **kwargs)
         self.fields['shipping_method'].queryset = ShippingMethod.objects.filter(is_active=True)
-        # Only surface gateways that are actually configured (see payments.py)
-        self.fields['payment_method'].choices = available_payment_methods()
+        # Gateways that are not configured are shown as disabled hints rather than
+        # silently disappearing (so the checkout UI does not look degraded before
+        # keys are added to .env). Only actually-configured methods are selectable.
+        self.fields['payment_method'].choices = _available_payment_method_choices()
+
+        # Digital-only carts: no shipping needed, pre-fill digital delivery
+        if self.cart and self.cart.is_all_digital():
+            self.fields['shipping_option'].required = False
+            self.fields['shipping_option'].widget = forms.HiddenInput()
+            self.fields['shipping_method'].required = False
+            self.fields['shipping_method'].widget = forms.HiddenInput()
+            # Lazy import to avoid circular import with views
+            from .views import _get_digital_shipping_method
+            digital_method = _get_digital_shipping_method()
+            self.fields['shipping_method'].initial = digital_method.pk
+            self.fields['shipping_method'].queryset = ShippingMethod.objects.filter(pk=digital_method.pk)
+            self.fields['billing_postal_code'].required = False
+            self.fields['billing_country'].required = False
+            self.fields['shipping_full_name'].required = False
+            self.fields['shipping_phone'].required = False
+            self.fields['shipping_address_line_1'].required = False
+            self.fields['shipping_address_line_2'].required = False
+            self.fields['shipping_city'].required = False
+            self.fields['shipping_state'].required = False
+            self.fields['shipping_postal_code'].required = False
+            self.fields['shipping_country'].required = False
+            self.initial['shipping_option'] = self.SHIPPING_SAME_AS_BILLING
+            self.initial['billing_country'] = 'Nepal'
 
         if self.user and getattr(self.user, 'is_authenticated', False):
             addresses = self.user.addresses.all()

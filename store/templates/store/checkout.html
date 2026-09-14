@@ -12,7 +12,7 @@
     </nav>
     <h1 style="font-size:1.8rem;margin-bottom:24px">Checkout</h1>
 
-    <form method="post" id="checkout-form">
+    <form method="post" id="checkout-form" action="{% url 'checkout' %}">
         {% csrf_token %}
         <div class="checkout-layout">
             <div>
@@ -186,7 +186,7 @@
                     {% for item in items %}
                     <div class="order-mini-item">
                         {% with img=item.product.images.first %}
-                        <img src="{% if img and img.src_url %}{{ img.src_url }}{% else %}{% static 'images/placeholder.svg' %}{% endif %}" alt="{{ item.product.name }}"> onerror="this.onerror=null;this.src='{% static 'images/placeholder.svg' %}'"
+                        <img src="{% if img and img.src_url %}{{ img.src_url }}{% else %}{% static 'images/placeholder.svg' %}{% endif %}" alt="{{ item.product.name }}" onerror="this.onerror=null;this.src='{% static 'images/placeholder.svg' %}'">
                         {% endwith %}
                         <div style="flex:1">
                             <div style="font-weight:600;font-size:.85rem">{{ item.product.name }}</div>
