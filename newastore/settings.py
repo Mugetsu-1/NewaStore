@@ -11,6 +11,9 @@ SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-your-secret-ke
 DEBUG = os.environ.get('DJANGO_DEBUG', 'True') == 'True'
 ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', '*').split(',')
 
+# Absolute base URL used in emails (order links, welcome CTA, …)
+SITE_BASE_URL = os.environ.get('SITE_BASE_URL', 'http://localhost:8000')
+
 # Jazzmin MUST be placed above django.contrib.admin
 INSTALLED_APPS = [
     'jazzmin',
@@ -23,7 +26,20 @@ INSTALLED_APPS = [
     'django.contrib.sitemaps',
     'django.contrib.humanize',
     'store',
+    'rest_framework',
 ]
+
+REST_FRAMEWORK = {
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 24,
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '120/min',
+        'contact': '5/min',
+    },
+}
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -148,8 +164,17 @@ KHALTI_PUBLIC_KEY = os.environ.get('KHALTI_PUBLIC_KEY', '')
 KHALTI_SECRET_KEY = os.environ.get('KHALTI_SECRET_KEY', '')
 STRIPE_PUBLIC_KEY = os.environ.get('STRIPE_PUBLIC_KEY', '')
 STRIPE_SECRET_KEY = os.environ.get('STRIPE_SECRET_KEY', '')
+# Webhook signing secret — REQUIRED in production (CLI: stripe listen --forward-to localhost:8000/webhooks/stripe/)
+STRIPE_WEBHOOK_SECRET = os.environ.get('STRIPE_WEBHOOK_SECRET', '')
+# Stripe does not support NPR; price the gateway charge in a supported currency.
+STRIPE_CURRENCY = os.environ.get('STRIPE_CURRENCY', 'usd')
+STRIPE_PRICE_LABEL = os.environ.get('STRIPE_PRICE_LABEL', 'USD $')
 PAYPAL_CLIENT_ID = os.environ.get('PAYPAL_CLIENT_ID', '')
 PAYPAL_SECRET = os.environ.get('PAYPAL_SECRET', '')
+PAYPAL_WEBHOOK_ID = os.environ.get('PAYPAL_WEBHOOK_ID', '')
+PAYPAL_CURRENCY = os.environ.get('PAYPAL_CURRENCY', 'usd')
+PAYPAL_PRICE_LABEL = os.environ.get('PAYPAL_PRICE_LABEL', 'USD $')
+PAYPAL_SANDBOX = os.environ.get('PAYPAL_SANDBOX', 'True') == 'True'
 
 # Security (enable in production)
 if not DEBUG:

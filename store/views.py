@@ -18,9 +18,14 @@ from django.http import JsonResponse, HttpResponse, Http404
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse_lazy, reverse
 from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST, require_http_methods
 from django.db.models import Prefetch
 
+from .payments import (
+    is_stripe_configured, create_stripe_payment_intent, retrieve_stripe_payment_intent,
+    is_paypal_configured, create_paypal_order, capture_paypal_order, PayPalError,
+)
 from .models import (
     Product, Category, Tag, ProductVariant, ProductImage, Review,
     Coupon, CouponUsage, Address, Wishlist, WishlistItem,
@@ -36,6 +41,7 @@ from .cart import CartManager
 from .utils import (
     calculate_tax, send_order_confirmation, send_order_status_update,
     build_invoice_pdf, get_client_ip, send_templated_email,
+    send_welcome_email, mark_order_paid,
 )
 
 User = get_user_model()
@@ -171,6 +177,8 @@ def product_list(request):
         'genres': genres,
         'page_title': 'Shop',
     }
+    if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+        return render(request, 'store/partials/product_grid_fragment.html', context)
     return render(request, 'store/product_list.html', context)
 
 
@@ -555,8 +563,12 @@ def _create_order_and_pay(request, form, manager):
         order.confirmed_at = timezone.now()
         order.save()
         return redirect('order_success', order_number=order.order_number)
+    elif payment_method == 'stripe':
+        return redirect('stripe_checkout', order_number=order.order_number)
+    elif payment_method == 'paypal':
+        return redirect('paypal_checkout', order_number=order.order_number)
     else:
-        # Other gateways fall back to a pending payment page
+        # bank_transfer and any future gateways keep the pending page
         return redirect('order_success', order_number=order.order_number)
 
 
@@ -601,6 +613,200 @@ def _initiate_khalti(request, order):
         'return_url': request.build_absolute_uri(reverse('khalti_verify')),
     }
     return render(request, 'store/khalti_form.html', context)
+
+
+# ============================================================
+# STRIPE (Payment Intents + webhook)
+# ============================================================
+
+def _order_for_payment(request, order_number):
+    """Orders are paid by link — the order number is the bearer token."""
+    return get_object_or_404(Order, order_number=order_number)
+
+
+def stripe_checkout(request, order_number):
+    order = _order_for_payment(request, order_number)
+    if not is_stripe_configured():
+        messages.error(request, 'Stripe is not configured yet. Please choose another payment method.')
+        return redirect('payment_failed', order_number=order.order_number)
+    return render(request, 'store/stripe_form.html', {
+        'order': order,
+        'stripe_public_key': settings.STRIPE_PUBLIC_KEY,
+        'stripe_currency': getattr(settings, 'STRIPE_CURRENCY', 'usd'),
+        'stripe_price_label': getattr(settings, 'STRIPE_PRICE_LABEL', 'USD $'),
+        'page_title': 'Pay with Card',
+    })
+
+
+@require_POST
+def stripe_create_intent(request, order_number):
+    """JSON endpoint -> {client_secret} consumed by Stripe.js."""
+    order = _order_for_payment(request, order_number)
+    if not is_stripe_configured():
+        return JsonResponse({'success': False, 'error': 'Stripe is not configured.'}, status=501)
+    if order.payment_status == 'paid':
+        return JsonResponse({'success': True, 'already_paid': True})
+    try:
+        intent = create_stripe_payment_intent(order)
+    except Exception as exc:  # typed StripeError -> surface to the UI
+        return JsonResponse({'success': False, 'error': str(exc)}, status=502)
+    return JsonResponse({'success': True, 'client_secret': intent.get('client_secret')})
+
+
+def stripe_success(request, order_number):
+    """Stripe.js return URL — double-checks status server-side, then fulfills."""
+    order = _order_for_payment(request, order_number)
+    intent_id = request.GET.get('payment_intent', '')
+    if intent_id:
+        try:
+            intent = retrieve_stripe_payment_intent(intent_id)
+            if intent.get('status') == 'succeeded':
+                mark_order_paid(order, gateway='stripe', txn_id=intent.get('id'))
+                return redirect('order_success', order_number=order.order_number)
+        except Exception:
+            pass
+    messages.error(request, 'Payment could not be verified yet. If you were charged, check your email for the receipt.')
+    return redirect('payment_failed', order_number=order.order_number)
+
+
+@csrf_exempt
+@require_POST
+def stripe_webhook(request):
+    """Webhook endpoint — fulfills orders when payment_intent.succeeded fires."""
+    payload = request.body
+    secret = getattr(settings, 'STRIPE_WEBHOOK_SECRET', '')
+    if secret:
+        try:
+            import stripe
+            stripe.api_key = settings.STRIPE_SECRET_KEY
+            event = stripe.Webhook.construct_event(payload, request.META.get('HTTP_STRIPE_SIGNATURE', ''), secret)
+        except Exception:
+            return HttpResponse(status=400)
+    else:
+        try:
+            event = json.loads(payload)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return HttpResponse(status=400)
+
+    if event.get('type') == 'payment_intent.succeeded':
+        pi = event['data']['object']
+        order_number = (pi.get('metadata') or {}).get('order_number', '')
+        order = Order.objects.filter(order_number=order_number).first()
+        if order:
+            mark_order_paid(order, gateway='stripe', txn_id=pi.get('id'))
+    return HttpResponse(status=200)
+
+
+# ============================================================
+# PAYPAL (Orders v2 + webhook)
+# ============================================================
+
+def paypal_checkout(request, order_number):
+    order = _order_for_payment(request, order_number)
+    return render(request, 'store/paypal_form.html', {
+        'order': order,
+        'paypal_configured': is_paypal_configured(),
+        'paypal_currency': getattr(settings, 'PAYPAL_CURRENCY', 'usd'),
+        'paypal_price_label': getattr(settings, 'PAYPAL_PRICE_LABEL', 'USD $'),
+        'page_title': 'Pay with PayPal',
+    })
+
+
+@require_POST
+def paypal_create_order(request, order_number):
+    """JSON endpoint -> {approval_url}; the checkout page redirects to PayPal."""
+    order = _order_for_payment(request, order_number)
+    if not is_paypal_configured():
+        return JsonResponse({'success': False, 'error': 'PayPal is not configured.'}, status=501)
+    if order.payment_status == 'paid':
+        return JsonResponse({'success': True, 'already_paid': True})
+    try:
+        approval_url = create_paypal_order(
+            order,
+            request.build_absolute_uri(reverse('paypal_capture', args=[order.order_number])),
+            request.build_absolute_uri(reverse('payment_failed', args=[order.order_number])),
+        )
+    except PayPalError as exc:
+        return JsonResponse({'success': False, 'error': str(exc)}, status=502)
+    return JsonResponse({'success': True, 'approval_url': approval_url})
+
+
+def paypal_capture(request, order_number):
+    """Return URL after approval — captures the order server-side and fulfills."""
+    order = _order_for_payment(request, order_number)
+    token = request.GET.get('token')
+    if not token:
+        messages.error(request, 'No PayPal payment token received.')
+        return redirect('payment_failed', order_number=order.order_number)
+    try:
+        result = capture_paypal_order(token)
+    except PayPalError as exc:
+        Order.objects.filter(pk=order.pk).update(payment_status='failed')
+        messages.error(request, f'PayPal capture failed: {exc}')
+        return redirect('payment_failed', order_number=order.order_number)
+
+    capture = result['purchase_units'][0]['payments']['captures'][0]
+    mark_order_paid(order, gateway='paypal', txn_id=capture.get('id'))
+    return redirect('order_success', order_number=order.order_number)
+
+
+def _verify_paypal_webhook(request, event_body):
+    """Verify a PayPal webhook with its transmission signature.
+
+    Requires PAYPAL_WEBHOOK_ID + the `cryptography` package. Automatically
+    skipped in development when PAYPAL_WEBHOOK_ID is empty.
+    """
+    webhook_id = getattr(settings, 'PAYPAL_WEBHOOK_ID', '')
+    if not webhook_id:
+        return True  # dev mode
+    cert_url = request.META.get('HTTP_PAYPAL_CERT_URL', '')
+    if not (cert_url.startswith('https://api-m.sandbox.paypal.com') or
+            cert_url.startswith('https://api-m.paypal.com')):
+        return False
+    import base64
+    import requests as _requests
+    try:
+        from cryptography import x509
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import padding
+    except ImportError:
+        return False
+    try:
+        cert_pem = _requests.get(cert_url, timeout=10).text
+        cert = x509.load_pem_x509_certificate(cert_pem.encode())
+        public_key = cert.public_key()
+        transmission_id = request.META.get('HTTP_PAYPAL_TRANSMISSION_ID', '')
+        transmission_time = request.META.get('HTTP_PAYPAL_TRANSMISSION_TIME', '')
+        signature_b64 = request.META.get('HTTP_PAYPAL_TRANSMISSION_SIG', '')
+        message = f"{transmission_id}|{transmission_time}|{webhook_id}|{event_body.decode('utf-8')}"
+        public_key.verify(
+            base64.b64decode(signature_b64),
+            message.encode('utf-8'),
+            padding.PKCS1v15(),
+            hashes.SHA256(),
+        )
+        return True
+    except Exception:
+        return False
+
+
+@csrf_exempt
+@require_POST
+def paypal_webhook(request):
+    """Receives PAYMENT.CAPTURE.COMPLETED notifications and fulfills orders."""
+    try:
+        event = json.loads(request.body)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return HttpResponse(status=400)
+    if not _verify_paypal_webhook(request, request.body):
+        return HttpResponse(status=400)
+    if event.get('event_type') == 'PAYMENT.CAPTURE.COMPLETED':
+        resource = event.get('resource') or {}
+        ref = ((resource.get('supplementary_data') or {}).get('related_ids') or {}).get('order_id', '')
+        order = Order.objects.filter(order_number=ref).first()
+        if order:
+            mark_order_paid(order, gateway='paypal', txn_id=resource.get('id'))
+    return HttpResponse('OK')
 
 
 def esewa_verify(request):
@@ -946,6 +1152,8 @@ def register(request):
         if form.is_valid():
             user = form.save()
             login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+            if user.email:
+                send_welcome_email(user)
             messages.success(request, f'Welcome, {user.first_name or user.username}!')
             return redirect('home')
     else:

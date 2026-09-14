@@ -321,4 +321,103 @@
     tick();
     setInterval(tick, 1000);
   });
+
+  // ---------- Server messages -> toast stack ----------
+  const msgWrap = $('.messages-wrap');
+  if (msgWrap && msgWrap.children.length) {
+    const tw = $('#toast-wrap');
+    if (tw) Array.from(msgWrap.children).forEach((a) => tw.appendChild(a));
+  }
+
+  // ---------- Shop: AJAX filters, sorting & infinite scroll ----------
+  const shopResults = $('#shop-results');
+  const filterForm = $('#filter-form');
+  const sortForm = $('#sort-form');
+  let infiniteObserver = null;
+
+  function shopStateUrl() {
+    let params = new URLSearchParams();
+    if (filterForm) params = new URLSearchParams(new FormData(filterForm));
+    if (sortForm) {
+      const sp = new URLSearchParams(new FormData(sortForm));
+      const sort = sp.get('sort_by');
+      if (sort) params.set('sort_by', sort);
+    }
+    params.delete('page');
+    return '/shop/?' + params.toString();
+  }
+
+  async function loadShop(url) {
+    if (!shopResults) return;
+    shopResults.style.opacity = '0.45';
+    try {
+      const res = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+      const html = await res.text();
+      shopResults.innerHTML = html;
+      syncShopMeta();
+      history.pushState({}, '', url);
+      window.scrollTo({ top: shopResults.offsetTop - 140, behavior: 'smooth' });
+    } catch (err) {
+      showToast('Could not load results.', 'error');
+    } finally {
+      shopResults.style.opacity = '1';
+    }
+  }
+
+  function syncShopMeta() {
+    const grid = shopResults && shopResults.querySelector('.product-grid');
+    const counter = $('#result-count');
+    if (grid && counter) {
+      const total = grid.dataset.total || '0';
+      counter.innerHTML = total + ' ' + (total === '1' ? 'game' : 'games') + ' found';
+    }
+    startInfiniteScroll();
+  }
+
+  if (filterForm && shopResults) {
+    filterForm.addEventListener('submit', (e) => { e.preventDefault(); loadShop(shopStateUrl()); });
+  }
+  if (sortForm && shopResults) {
+    sortForm.addEventListener('change', (e) => {
+      if (e.target.name === 'sort_by') loadShop(shopStateUrl());
+    });
+  }
+
+  function startInfiniteScroll() {
+    if (!shopResults) return;
+    let sentinel = $('#infinite-sentinel', shopResults);
+    if (!sentinel) {
+      sentinel = document.createElement('div');
+      sentinel.id = 'infinite-sentinel';
+      sentinel.style.height = '1px';
+      shopResults.appendChild(sentinel);
+    }
+    if (infiniteObserver) infiniteObserver.disconnect();
+    let loading = false;
+    infiniteObserver = new IntersectionObserver(async (entries) => {
+      if (!entries[0].isIntersecting || loading) return;
+      const nextLink = shopResults.querySelector('.pagination a.page-next');
+      if (!nextLink) return;
+      loading = true;
+      try {
+        const res = await fetch(nextLink.href, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+        const html = await res.text();
+        const tmp = document.createElement('div');
+        tmp.innerHTML = html;
+        const more = tmp.querySelector('.product-grid');
+        const grid = shopResults.querySelector('.product-grid');
+        if (grid && more) grid.insertAdjacentHTML('beforeend', more.innerHTML);
+        const pagSlot = shopResults.querySelector('#pagination-slot');
+        const newPag = tmp.querySelector('.pagination');
+        if (pagSlot) pagSlot.innerHTML = newPag ? newPag.outerHTML : '';
+        syncShopMeta();
+      } catch (err) {
+        showToast('Could not load more results.', 'error');
+      } finally {
+        loading = false;
+      }
+    }, { rootMargin: '600px' });
+    infiniteObserver.observe(sentinel);
+  }
+  startInfiniteScroll();
 })();

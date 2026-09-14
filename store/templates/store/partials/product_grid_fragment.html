@@ -1,0 +1,6 @@
+<div class="product-grid" data-total="{{ total_count }}" data-has-next="{{ page_obj.has_next|yesno:'true,false' }}">
+    {% for product in products %}
+        {% include 'store/partials/product_card.html' %}
+    {% endfor %}
+</div>
+{% include 'store/partials/pagination.html' %}
