@@ -444,6 +444,46 @@ class PaymentFulfillmentTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertIn(reverse('payment_failed', args=[order.order_number]), response.url)
 
+    def test_checkout_hides_unconfigured_gateways(self):
+        """No Stripe/PayPal radios render when their keys are missing (.env)."""
+        user = User.objects.create_user('buyer2', password='pass12345')
+        self.client.login(username='buyer2', password='pass12345')
+        product = make_product(stock_quantity=10)
+        self.client.post(reverse('add_to_cart', args=[product.id]), {'quantity': 1})
+        ShippingMethod.objects.create(
+            name='Standard', price=Decimal('0'), estimated_days_min=1,
+            estimated_days_max=3, is_active=True)
+        response = self.client.get(reverse('checkout'))
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode()
+        self.assertNotIn('value="stripe"', html)
+        self.assertNotIn('value="paypal"', html)
+        self.assertIn('value="cod"', html)
+
+    def test_checkout_rejects_unconfigured_gateway_on_post(self):
+        """POSTing payment_method=stripe without keys fails validation (no order)."""
+        user = User.objects.create_user('buyer3', password='pass12345')
+        self.client.login(username='buyer3', password='pass12345')
+        product = make_product(stock_quantity=10)
+        self.client.post(reverse('add_to_cart', args=[product.id]), {'quantity': 1})
+        shipping = ShippingMethod.objects.create(
+            name='Standard', price=Decimal('0'), estimated_days_min=1,
+            estimated_days_max=3, is_active=True)
+        payload = {
+            'billing_full_name': 'Buyer Three', 'billing_phone': '9800000000',
+            'billing_email': 'buyer3@example.com', 'billing_address_line_1': 'Main St',
+            'billing_address_line_2': '', 'billing_city': 'Kathmandu',
+            'billing_state': 'Bagmati', 'billing_postal_code': '44600',
+            'billing_country': 'Nepal',
+            'shipping_option': 'same',
+            'shipping_method': shipping.id,
+            'payment_method': 'stripe',
+            'order_notes': '', 'terms_accepted': 'on',
+        }
+        response = self.client.post(reverse('checkout'), payload)
+        self.assertNotEqual(response.status_code, 302)
+        self.assertEqual(Order.objects.count(), 0)
+
 
 class ApiTests(TestCase):
     """Public JSON API endpoints (/api/...)."""

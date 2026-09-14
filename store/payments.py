@@ -29,6 +29,27 @@ def is_paypal_configured():
     return bool(settings.PAYPAL_CLIENT_ID and settings.PAYPAL_SECRET)
 
 
+def available_payment_methods():
+    """Checkout radio choices, omitting gateways with no credentials configured.
+
+    Keeps the storefront usable before Stripe/PayPal keys are added: the
+    unconfigured gateways never render and are rejected by form validation.
+    """
+    methods = [
+        ('esewa', 'eSewa'),
+        ('khalti', 'Khalti'),
+        ('stripe', 'Credit/Debit Card (Stripe)'),
+        ('paypal', 'PayPal'),
+        ('cod', 'Cash on Delivery'),
+        ('bank_transfer', 'Bank Transfer'),
+    ]
+    if not is_stripe_configured():
+        methods = [m for m in methods if m[0] != 'stripe']
+    if not is_paypal_configured():
+        methods = [m for m in methods if m[0] != 'paypal']
+    return methods
+
+
 # ---------------------------------------------------------------
 # Stripe (official stripe-python SDK)
 # ---------------------------------------------------------------
