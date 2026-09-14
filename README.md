@@ -200,6 +200,18 @@ newastore/
 
 ---
 
+## Email setup (Gmail SMTP)
+
+By default Django prints emails to the console. To send real emails:
+
+1. Enable **2-Step Verification** on the sending Google account.
+2. Generate an App Password at <https://myaccount.google.com/apppasswords> (app type *Mail*) - the 16-char code keeps its spaces.
+3. Put it in `.env` (see `.env.example`), then verify end-to-end:
+
+    python manage.py send_test_email --to you@gmail.com
+
+Transactional flows that use it: welcome (on signup), password reset, order confirmation, payment receipt, order status, and admin contact notifications. Failed sends are logged instead of silently dropped. An admin action on Site Settings (Send test email) sends a verification email too.
+
 ## Configuration
 
 Key settings can be overridden via environment variables:

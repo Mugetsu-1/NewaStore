@@ -1,7 +1,9 @@
 import csv
 from decimal import Decimal
 
-from django.contrib import admin
+from django.conf import settings
+from django.contrib import admin, messages
+from django.core.mail import send_mail
 from django.db.models import Sum
 from django.http import HttpResponse
 from django.utils.html import format_html
@@ -457,6 +459,25 @@ class ContactMessageAdmin(admin.ModelAdmin):
 class SiteSettingsAdmin(admin.ModelAdmin):
     list_display = ['site_name', 'email', 'phone', 'currency', 'tax_rate', 'maintenance_mode', 'updated_at']
     readonly_fields = ['created_at', 'updated_at']
+    actions = ['send_test_email_action']
+
+    def send_test_email_action(self, request, queryset):
+        """SMTP verification from the admin (sends to the configured site email)."""
+        site = SiteSettings.get_settings()
+        to = site.email or settings.DEFAULT_FROM_EMAIL
+        if not to:
+            self.message_user(request, 'No email configured in Site Settings.', level=messages.ERROR)
+            return
+        try:
+            send_mail(
+                'Newa Store - SMTP test',
+                'If you received this, email delivery is working.',
+                settings.DEFAULT_FROM_EMAIL, [to], fail_silently=False)
+            self.message_user(request, f'Test email sent to {to}.', level=messages.SUCCESS)
+        except Exception as exc:
+            self.message_user(request, f'SMTP send failed: {exc}', level=messages.ERROR)
+    send_test_email_action.short_description = 'Send test email'
+
     fieldsets = (
         ('General', {
             'fields': ('site_name', 'site_tagline', 'logo', 'favicon')

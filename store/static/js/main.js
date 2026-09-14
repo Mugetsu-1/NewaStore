@@ -13,6 +13,18 @@
   }
   const csrftoken = getCookie('csrftoken') || ($('[name=csrfmiddlewaretoken]') || {}).value || '';
 
+  // ---------- Broken-image fallback (hotlinked Steam art can 404) ----------
+  const IMG_PLACEHOLDER = document.body && document.body.dataset.placeholderUrl;
+  if (IMG_PLACEHOLDER) {
+    document.addEventListener('error', (e) => {
+      const el = e.target;
+      if (el && el.tagName === 'IMG' && !el.dataset.imgFellBack) {
+        el.dataset.imgFellBack = '1';
+        el.src = IMG_PLACEHOLDER;
+      }
+    }, true);
+  }
+
   // ---------- Theme toggle ----------
   const themeKey = 'newa-theme';
   const savedTheme = localStorage.getItem(themeKey);
