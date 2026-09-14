@@ -242,7 +242,15 @@ class CheckoutTests(TestCase):
         )
         self.client.login(username='buyer', password='pass12345')
         self.client.post(reverse('add_to_cart', args=[product.id]), {'quantity': 1})
-        response = self.client.post(reverse('checkout'), self._checkout_payload())
+        # Digital carts use the free Digital Delivery method
+        digital_method = ShippingMethod.objects.get_or_create(
+            name='Digital Delivery',
+            defaults=dict(description='Instant digital delivery', price=Decimal('0'), is_active=True,
+                          estimated_days_min=0, estimated_days_max=0)
+        )[0]
+        payload = self._checkout_payload()
+        payload['shipping_method'] = digital_method.id
+        response = self.client.post(reverse('checkout'), payload)
         self.assertEqual(response.status_code, 302)
         order = Order.objects.filter(items__product_name='Digital Key').first()
         self.assertIsNotNone(order)

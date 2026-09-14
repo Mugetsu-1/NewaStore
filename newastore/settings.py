@@ -75,26 +75,18 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'newastore.wsgi.application'
 
-# Database: PostgreSQL by default; set DJANGO_DB=sqlite to fall back.
-if os.environ.get('DJANGO_DB', 'postgres') == 'sqlite':
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
-        }
+# Database: PostgreSQL only (no sqlite fallback).
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.environ.get('DB_NAME', 'newastore'),
+        'USER': os.environ.get('DB_USER', 'newastore'),
+        'PASSWORD': os.environ.get('DB_PASSWORD', ''),
+        'HOST': os.environ.get('DB_HOST', 'localhost'),
+        'PORT': os.environ.get('DB_PORT', '5432'),
+        'CONN_MAX_AGE': 60,  # persistent connections
     }
-else:
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': os.environ.get('DB_NAME', 'newastore'),
-            'USER': os.environ.get('DB_USER', 'newastore'),
-            'PASSWORD': os.environ.get('DB_PASSWORD', ''),
-            'HOST': os.environ.get('DB_HOST', 'localhost'),
-            'PORT': os.environ.get('DB_PORT', '5432'),
-            'CONN_MAX_AGE': 60,  # persistent connections
-        }
-    }
+}
 
 # Caching (genre nav, search-import negative cache, etc.)
 CACHES = {
