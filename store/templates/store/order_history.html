@@ -1,0 +1,64 @@
+{% extends 'base.html' %}
+{% load static store_extras %}
+
+{% block content %}
+<div class="container">
+    <nav class="breadcrumb">
+        <a href="{% url 'home' %}"><i class="fas fa-home"></i> Home</a>
+        <i class="fas fa-chevron-right" style="font-size:.6rem"></i>
+        <a href="{% url 'profile' %}">Account</a>
+        <i class="fas fa-chevron-right" style="font-size:.6rem"></i>
+        <span>My Orders</span>
+    </nav>
+
+    <div class="account-layout">
+        {% include 'store/partials/account_nav.html' with active='orders' %}
+        <div>
+            <div class="flex-between mb-3" style="flex-wrap:wrap;gap:12px">
+                <h1 style="font-size:1.6rem">My Orders</h1>
+                <form method="get">
+                    <select name="status" class="form-control" onchange="this.form.submit()">
+                        <option value="">All Orders</option>
+                        <option value="pending" {% if request.GET.status == 'pending' %}selected{% endif %}>Pending</option>
+                        <option value="confirmed" {% if request.GET.status == 'confirmed' %}selected{% endif %}>Confirmed</option>
+                        <option value="processing" {% if request.GET.status == 'processing' %}selected{% endif %}>Processing</option>
+                        <option value="shipped" {% if request.GET.status == 'shipped' %}selected{% endif %}>Shipped</option>
+                        <option value="delivered" {% if request.GET.status == 'delivered' %}selected{% endif %}>Delivered</option>
+                        <option value="cancelled" {% if request.GET.status == 'cancelled' %}selected{% endif %}>Cancelled</option>
+                    </select>
+                </form>
+            </div>
+
+            {% if orders %}
+            <div class="table-wrap">
+                <table class="data">
+                    <thead>
+                        <tr><th>Order</th><th>Date</th><th>Items</th><th>Total</th><th>Status</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                    {% for order in orders %}
+                        <tr>
+                            <td><strong>{{ order.order_number }}</strong></td>
+                            <td>{{ order.created_at|date:"M d, Y" }}</td>
+                            <td>{{ order.items.count }}</td>
+                            <td>{{ currency_symbol }} {{ order.total|floatformat:2 }}</td>
+                            <td>{% order_status_badge order.status %}</td>
+                            <td><a href="{% url 'order_detail' order.order_number %}" class="btn btn-outline btn-sm">View</a></td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% include 'store/partials/pagination.html' %}
+            {% else %}
+            <div class="empty">
+                <i class="fas fa-box-open"></i>
+                <h3>No orders yet</h3>
+                <p>When you place an order, it will appear here.</p>
+                <a href="{% url 'product_list' %}" class="btn btn-primary">Start Shopping</a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

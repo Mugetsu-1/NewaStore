@@ -1,0 +1,82 @@
+from django.urls import path
+from django.contrib.auth import views as auth_views
+from . import views
+
+urlpatterns = [
+    # Catalog
+    path('', views.home, name='home'),
+    path('shop/', views.product_list, name='product_list'),
+    path('search/', views.search, name='search'),
+    path('search/suggest/', views.search_suggest, name='search_suggest'),
+    path('product/<slug:slug>/', views.product_detail, name='product_detail'),
+    path('product/<slug:slug>/quick-view/', views.quick_view, name='quick_view'),
+    path('category/<slug:slug>/', views.category_detail, name='category_detail'),
+    path('tag/<slug:slug>/', views.tag_detail, name='tag_detail'),
+
+    # Cart
+    path('cart/', views.cart_view, name='cart'),
+    path('cart/mini/', views.cart_mini, name='cart_mini'),
+    path('cart/add/<int:product_id>/', views.add_to_cart, name='add_to_cart'),
+    path('cart/update/<int:item_id>/', views.update_cart, name='update_cart'),
+    path('cart/remove/<int:item_id>/', views.remove_from_cart, name='remove_from_cart'),
+    path('cart/clear/', views.clear_cart, name='clear_cart'),
+    path('cart/coupon/apply/', views.apply_coupon, name='apply_coupon'),
+    path('cart/coupon/remove/', views.remove_coupon, name='remove_coupon'),
+
+    # Checkout & payments
+    path('checkout/', views.checkout, name='checkout'),
+    path('esewa-verify/', views.esewa_verify, name='esewa_verify'),
+    path('khalti-verify/', views.khalti_verify, name='khalti_verify'),
+    path('payment/failed/<str:order_number>/', views.payment_failed, name='payment_failed'),
+    path('order/success/<str:order_number>/', views.order_success, name='order_success'),
+
+    # Orders
+    path('orders/', views.order_history, name='order_history'),
+    path('orders/<str:order_number>/', views.order_detail, name='order_detail'),
+    path('orders/<str:order_number>/track/', views.order_tracking, name='order_tracking'),
+    path('orders/<str:order_number>/invoice/', views.download_invoice, name='download_invoice'),
+    path('orders/<str:order_number>/cancel/', views.cancel_order, name='cancel_order'),
+    path('orders/<str:order_number>/reorder/', views.reorder, name='reorder'),
+
+    # Account
+    path('profile/', views.profile, name='profile'),
+    path('profile/edit/', views.profile_edit, name='profile_edit'),
+    path('profile/password/', views.change_password, name='change_password'),
+    path('reviews/', views.my_reviews, name='my_reviews'),
+
+    # Addresses
+    path('addresses/', views.address_list, name='address_list'),
+    path('addresses/add/', views.address_create, name='address_create'),
+    path('addresses/<int:pk>/edit/', views.address_edit, name='address_edit'),
+    path('addresses/<int:pk>/delete/', views.address_delete, name='address_delete'),
+    path('addresses/<int:pk>/default/', views.address_set_default, name='address_set_default'),
+
+    # Wishlist
+    path('wishlist/', views.wishlist_view, name='wishlist'),
+    path('wishlist/toggle/<int:product_id>/', views.wishlist_toggle, name='wishlist_toggle'),
+    path('wishlist/remove/<int:item_id>/', views.wishlist_remove, name='wishlist_remove'),
+    path('wishlist/move-to-cart/<int:item_id>/', views.wishlist_move_to_cart, name='wishlist_move_to_cart'),
+
+    # Reviews
+    path('product/<slug:slug>/review/', views.add_review, name='add_review'),
+    path('review/<int:review_id>/helpful/', views.mark_review_helpful, name='mark_review_helpful'),
+
+    # Auth
+    path('register/', views.register, name='register'),
+    path('login/', auth_views.LoginView.as_view(template_name='registration/login.html'), name='login'),
+    path('logout/', auth_views.LogoutView.as_view(), name='logout'),
+    path('password-reset/', views.CustomPasswordResetView.as_view(), name='password_reset'),
+    path('password-reset/done/', views.CustomPasswordResetDoneView.as_view(), name='password_reset_done'),
+    path('password-reset/confirm/<uidb64>/<token>/', views.CustomPasswordResetConfirmView.as_view(), name='password_reset_confirm'),
+    path('password-reset/complete/', views.CustomPasswordResetCompleteView.as_view(), name='password_reset_complete'),
+
+    # Static pages
+    path('about/', views.about, name='about'),
+    path('contact/', views.contact, name='contact'),
+    path('faq/', views.faq, name='faq'),
+    path('privacy/', views.privacy, name='privacy'),
+    path('terms/', views.terms, name='terms'),
+    path('shipping-returns/', views.shipping_returns, name='shipping_returns'),
+    path('newsletter/subscribe/', views.newsletter_subscribe, name='newsletter_subscribe'),
+    path('robots.txt', views.robots_txt, name='robots_txt'),
+]

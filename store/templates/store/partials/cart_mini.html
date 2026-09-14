@@ -1,0 +1,32 @@
+{% load static store_extras %}
+{% if cart and cart.items.exists %}
+    <div data-mini-total="{{ cart.total|floatformat:2 }}">
+        {% for item in cart.items.all %}
+        <div class="drawer-item">
+            {% with img=item.product.images.first %}
+            <img src="{% if img and img.src_url %}{{ img.src_url }}{% else %}{% static 'images/placeholder.svg' %}{% endif %}" alt="{{ item.product.name }}">
+            {% endwith %}
+            <div style="flex:1">
+                <div style="font-weight:600;font-size:.88rem">{{ item.product.name }}</div>
+                {% if item.variant %}<div class="text-muted" style="font-size:.76rem">{{ item.variant.name }}</div>{% endif %}
+                <div class="text-muted" style="font-size:.8rem">{{ item.quantity }} × {{ currency_symbol }} {{ item.unit_price|floatformat:2 }}</div>
+            </div>
+            <div style="text-align:right">
+                <div style="font-weight:700;color:var(--primary);font-size:.9rem">{{ currency_symbol }} {{ item.total_price|floatformat:2 }}</div>
+            </div>
+        </div>
+        {% endfor %}
+        <div class="summary-row" style="margin-top:14px"><span>Subtotal</span><span>{{ currency_symbol }} {{ cart.subtotal|floatformat:2 }}</span></div>
+        {% if cart.discount_amount %}
+        <div class="summary-row" style="color:var(--primary)"><span>Discount</span><span>-{{ currency_symbol }} {{ cart.discount_amount|floatformat:2 }}</span></div>
+        {% endif %}
+        <div class="summary-row total"><span>Total</span><span class="val">{{ currency_symbol }} {{ cart.total|floatformat:2 }}</span></div>
+    </div>
+{% else %}
+    <div class="empty" style="padding:40px 0">
+        <i class="fas fa-shopping-bag"></i>
+        <h3>Your cart is empty</h3>
+        <p>Add some products to get started.</p>
+        <a href="{% url 'product_list' %}" class="btn btn-primary">Start Shopping</a>
+    </div>
+{% endif %}

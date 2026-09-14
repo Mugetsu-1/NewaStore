@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% load static store_extras %}
+
+{% block content %}
+<div class="container">
+    <nav class="breadcrumb">
+        <a href="{% url 'home' %}"><i class="fas fa-home"></i> Home</a>
+        <i class="fas fa-chevron-right" style="font-size:.6rem"></i>
+        <a href="{% url 'profile' %}">Account</a>
+        <i class="fas fa-chevron-right" style="font-size:.6rem"></i>
+        <span>Addresses</span>
+    </nav>
+    <div class="account-layout">
+        {% include 'store/partials/account_nav.html' with active='addresses' %}
+        <div>
+            <div class="flex-between mb-3">
+                <h1 style="font-size:1.5rem">My Addresses</h1>
+                <a href="{% url 'address_create' %}" class="btn btn-primary btn-sm"><i class="fas fa-plus"></i> Add Address</a>
+            </div>
+            {% if addresses %}
+            <div class="stat-grid">
+                {% for address in addresses %}
+                <div class="checkout-section" style="margin:0">
+                    <div class="flex-between mb-2">
+                        <span class="badge badge-secondary">{{ address.get_address_type_display }}</span>
+                        {% if address.is_default %}<span class="badge badge-success">Default</span>{% endif %}
+                    </div>
+                    <strong>{{ address.full_name }}</strong>
+                    <p class="text-muted" style="font-size:.88rem;margin-top:6px">
+                        {{ address.address_line_1 }}<br>
+                        {% if address.address_line_2 %}{{ address.address_line_2 }}<br>{% endif %}
+                        {{ address.city }}, {{ address.state }} {{ address.postal_code }}<br>
+                        {{ address.country }}<br>
+                        {{ address.phone }}
+                    </p>
+                    <div class="flex gap-1 mt-2" style="flex-wrap:wrap">
+                        <a href="{% url 'address_edit' address.pk %}" class="btn btn-outline btn-sm"><i class="fas fa-edit"></i> Edit</a>
+                        {% if not address.is_default %}
+                        <form action="{% url 'address_set_default' address.pk %}" method="post">{% csrf_token %}<button class="btn btn-ghost btn-sm" type="submit"><i class="fas fa-check"></i> Set Default</button></form>
+                        {% endif %}
+                        <form action="{% url 'address_delete' address.pk %}" method="post" onsubmit="return confirm('Delete this address?')">{% csrf_token %}<button class="btn btn-ghost btn-sm" type="submit" style="color:var(--danger)"><i class="fas fa-trash"></i></button></form>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="empty"><i class="fas fa-map-marker-alt"></i><h3>No addresses saved</h3><p>Add an address for faster checkout.</p><a href="{% url 'address_create' %}" class="btn btn-primary">Add Address</a></div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

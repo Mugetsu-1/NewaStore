@@ -1,0 +1,76 @@
+{% extends 'base.html' %}
+{% load static store_extras %}
+
+{% block content %}
+<div class="container">
+    <nav class="breadcrumb">
+        <a href="{% url 'home' %}"><i class="fas fa-home"></i> Home</a>
+        <i class="fas fa-chevron-right" style="font-size:.6rem"></i>
+        <span>My Account</span>
+    </nav>
+
+    <div class="account-layout">
+        {% include 'store/partials/account_nav.html' with active='dashboard' %}
+        <div>
+            <div class="flex-between mb-4" style="flex-wrap:wrap;gap:12px">
+                <div>
+                    <h1 style="font-size:1.6rem">Hello, {{ user.first_name|default:user.username }} 👋</h1>
+                    <p class="text-muted">Welcome back to your account dashboard.</p>
+                </div>
+                <a href="{% url 'profile_edit' %}" class="btn btn-outline btn-sm"><i class="fas fa-user-edit"></i> Edit Profile</a>
+            </div>
+
+            <div class="stat-grid mb-4">
+                <div class="stat-card"><div class="num">{{ order_count }}</div><div class="label"><i class="fas fa-box"></i> Total Orders</div></div>
+                <div class="stat-card"><div class="num">{{ pending_count }}</div><div class="label"><i class="fas fa-clock"></i> Pending</div></div>
+                <div class="stat-card"><div class="num">{{ completed_count }}</div><div class="label"><i class="fas fa-check"></i> Delivered</div></div>
+                <div class="stat-card"><div class="num">{{ wishlist_count }}</div><div class="label"><i class="fas fa-heart"></i> Wishlist</div></div>
+            </div>
+
+            <div class="checkout-section">
+                <div class="flex-between mb-3">
+                    <h3 style="margin:0">Recent Orders</h3>
+                    <a href="{% url 'order_history' %}" class="btn btn-ghost btn-sm">View all <i class="fas fa-arrow-right"></i></a>
+                </div>
+                {% if recent_orders %}
+                <div class="table-wrap">
+                    <table class="data">
+                        <thead><tr><th>Order</th><th>Date</th><th>Total</th><th>Status</th><th></th></tr></thead>
+                        <tbody>
+                        {% for order in recent_orders %}
+                            <tr>
+                                <td>{{ order.order_number }}</td>
+                                <td>{{ order.created_at|date:"M d, Y" }}</td>
+                                <td>{{ currency_symbol }} {{ order.total|floatformat:2 }}</td>
+                                <td>{% order_status_badge order.status %}</td>
+                                <td><a href="{% url 'order_detail' order.order_number %}" class="btn btn-outline btn-sm">View</a></td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted">No orders yet. <a href="{% url 'product_list' %}" style="color:var(--primary)">Start shopping</a>.</p>
+                {% endif %}
+            </div>
+
+            {% if addresses %}
+            <div class="checkout-section">
+                <div class="flex-between mb-3">
+                    <h3 style="margin:0">Saved Addresses</h3>
+                    <a href="{% url 'address_list' %}" class="btn btn-ghost btn-sm">Manage <i class="fas fa-arrow-right"></i></a>
+                </div>
+                <div class="stat-grid">
+                    {% for address in addresses %}
+                    <div class="stat-card" style="padding:16px">
+                        <strong>{{ address.get_address_type_display }}</strong>{% if address.is_default %} <span class="badge badge-success">Default</span>{% endif %}
+                        <p class="text-muted" style="font-size:.85rem;margin-top:6px">{{ address.full_name }}<br>{{ address.address_line_1 }}<br>{{ address.city }}, {{ address.country }}</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

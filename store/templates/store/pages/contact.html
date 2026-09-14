@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="container section">
+    <div class="text-center mb-5">
+        <h1 style="font-size:clamp(1.8rem,4vw,2.4rem)">Get in Touch</h1>
+        <p class="text-muted">Have a question, feedback or need help? We'd love to hear from you.</p>
+    </div>
+
+    <div class="pd-grid" style="grid-template-columns:1fr 1.3fr">
+        <div>
+            <div class="checkout-section">
+                <div class="feature" style="padding:0;border:none;background:none;margin-bottom:22px">
+                    <i class="fas fa-envelope"></i>
+                    <div><h4>Email</h4><p>{{ site_settings.email|default:'support@newastore.com' }}</p></div>
+                </div>
+                <div class="feature" style="padding:0;border:none;background:none;margin-bottom:22px">
+                    <i class="fas fa-phone"></i>
+                    <div><h4>Phone</h4><p>{{ site_settings.phone|default:'+977-9800000000' }}</p></div>
+                </div>
+                <div class="feature" style="padding:0;border:none;background:none">
+                    <i class="fas fa-map-marker-alt"></i>
+                    <div><h4>Address</h4><p>{{ site_settings.address|default:'Kathmandu, Nepal' }}</p></div>
+                </div>
+            </div>
+        </div>
+        <div>
+            <div class="checkout-section">
+                <h3 style="margin-bottom:20px">Send us a message</h3>
+                <form method="post" class="auth-form">
+                    {% csrf_token %}
+                    <div class="form-row">
+                        <div class="form-group"><label class="form-label">Name</label>{{ form.name }}{% if form.name.errors %}<div class="form-error">{{ form.name.errors.0 }}</div>{% endif %}</div>
+                        <div class="form-group"><label class="form-label">Email</label>{{ form.email }}{% if form.email.errors %}<div class="form-error">{{ form.email.errors.0 }}</div>{% endif %}</div>
+                    </div>
+                    <div class="form-group"><label class="form-label">Subject</label>{{ form.subject }}</div>
+                    <div class="form-group"><label class="form-label">Message</label>{{ form.message }}</div>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-paper-plane"></i> Send Message</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

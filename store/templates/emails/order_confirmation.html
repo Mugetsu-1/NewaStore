@@ -1,0 +1,28 @@
+{% load store_extras %}<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="font-family:Arial,sans-serif;background:#f4f6f8;padding:24px;color:#111">
+<div style="max-width:600px;margin:auto;background:#fff;border-radius:12px;overflow:hidden">
+  <div style="background:#16a34a;padding:24px;color:#fff">
+    <h1 style="margin:0;font-size:22px">Order Confirmed</h1>
+    <p style="margin:6px 0 0">Thank you for shopping with {{ site_settings.site_name|default:"Newa Store" }}!</p>
+  </div>
+  <div style="padding:24px">
+    <p>Hi {{ order.customer_name }},</p>
+    <p>We've received your order <strong>{{ order.order_number }}</strong> and it's being processed.</p>
+    <table style="width:100%;border-collapse:collapse;margin:16px 0">
+      <thead><tr style="background:#f1f5f9;text-align:left"><th style="padding:8px">Item</th><th style="padding:8px">Qty</th><th style="padding:8px">Total</th></tr></thead>
+      <tbody>
+      {% for item in order.items.all %}
+        <tr><td style="padding:8px;border-bottom:1px solid #eee">{{ item.product_name }}</td><td style="padding:8px;border-bottom:1px solid #eee">{{ item.quantity }}</td><td style="padding:8px;border-bottom:1px solid #eee">{{ currency_symbol }} {{ item.total_price|floatformat:2 }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p style="text-align:right"><strong>Total: {{ currency_symbol }} {{ order.total|floatformat:2 }}</strong></p>
+    <p><strong>Shipping to:</strong><br>{{ order.shipping_address.full_name }}<br>{{ order.shipping_address.address_line_1 }}<br>{{ order.shipping_address.city }}, {{ order.shipping_address.country }}</p>
+    <p>We'll notify you once your order ships.</p>
+    <p>— The {{ site_settings.site_name|default:"Newa Store" }} Team</p>
+  </div>
+</div>
+</body>
+</html>

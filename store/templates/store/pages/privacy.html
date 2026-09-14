@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="container section" style="max-width:820px">
+    <h1 style="font-size:clamp(1.8rem,4vw,2.4rem);margin-bottom:8px">Privacy Policy</h1>
+    <p class="text-muted mb-4">Last updated: {% now "F Y" %}</p>
+    <div class="prose">
+        <h3>1. Information We Collect</h3>
+        <p>We collect information you provide when creating an account, placing an order or contacting us — including your name, email, phone number, shipping address and payment details.</p>
+        <h3>2. How We Use Your Information</h3>
+        <ul>
+            <li>To process and deliver your orders</li>
+            <li>To communicate order updates and respond to inquiries</li>
+            <li>To improve our products and services</li>
+            <li>To send marketing communications (with your consent)</li>
+        </ul>
+        <h3>3. Data Security</h3>
+        <p>We implement industry-standard security measures to protect your personal data. Payment card information is processed by PCI-compliant gateways and never stored on our servers.</p>
+        <h3>4. Sharing Your Information</h3>
+        <p>We do not sell your personal data. We may share information with trusted third parties such as payment processors and delivery partners solely to fulfil your orders.</p>
+        <h3>5. Cookies</h3>
+        <p>We use cookies to maintain your session, remember preferences and analyse site traffic. You can disable cookies in your browser settings, though some features may not work.</p>
+        <h3>6. Your Rights</h3>
+        <p>You have the right to access, correct or delete your personal information. Contact us at {{ site_settings.email|default:'support@newastore.com' }} to exercise these rights.</p>
+        <h3>7. Contact</h3>
+        <p>For privacy-related questions, email us at {{ site_settings.email|default:'support@newastore.com' }}.</p>
+    </div>
+</div>
+{% endblock %}

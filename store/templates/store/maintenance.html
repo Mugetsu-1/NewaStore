@@ -1,0 +1,9 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block content %}
+<div class="container section text-center">
+    <i class="fas fa-screwdriver-wrench" style="font-size:4rem;color:var(--accent)"></i>
+    <h1 style="font-size:1.8rem;margin:18px 0">We'll be back soon</h1>
+    <p class="text-muted">{{ site_settings.maintenance_message|default:"Our store is currently undergoing scheduled maintenance. Please check back shortly." }}</p>
+</div>
+{% endblock %}
