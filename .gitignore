@@ -7,16 +7,23 @@ __pycache__/
 venv/
 env/
 .venv/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
 
 # Django
 db.sqlite3
 db.sqlite3-journal
 /media/
 /staticfiles/
+*.sqlite3
+*.sqlite3-journal
 
 # Environment
 .env
 .env.local
+.env.*.local
 
 # IDE / OS
 .idea/
@@ -28,5 +35,10 @@ Thumbs.db
 # Logs
 *.log
 
-# SteamSpy import progress marker
+# Local import and generated-data markers
 .steamspy_progress
+steamspy_progress*
+
+# Build and packaging output
+build/
+dist/
