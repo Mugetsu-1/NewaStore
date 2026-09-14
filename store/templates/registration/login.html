@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Sign In — {{ site_settings.site_name|default:"Newa Store" }}{% endblock %}
+
+{% block content %}
+<div class="auth-wrap">
+    <div class="auth-visual">
+        <div style="max-width:400px;text-align:center">
+            <i class="fas fa-gamepad" style="font-size:4rem;color:var(--primary);margin-bottom:20px"></i>
+            <h2 style="font-size:1.8rem;margin-bottom:12px">Welcome Back</h2>
+            <p class="text-muted">Sign in to access your orders, wishlist and a faster checkout experience.</p>
+        </div>
+    </div>
+    <div class="flex-center" style="padding:48px 24px">
+        <div class="auth-card">
+            <h1>Sign In</h1>
+            <p>Enter your credentials to continue.</p>
+            <div class="card-box">
+                {% if form.errors %}
+                <div class="alert alert-error mb-3"><i class="fas fa-circle-exclamation"></i><span>Invalid username/email or password. Please try again.</span></div>
+                {% endif %}
+                <form method="post" class="auth-form">
+                    {% csrf_token %}
+                    <div class="form-group">
+                        <label class="form-label">Username or Email</label>
+                        <input type="text" name="username" class="form-control" placeholder="you@example.com" required autofocus>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Password</label>
+                        <input type="password" name="password" class="form-control" placeholder="••••••••" required>
+                    </div>
+                    <input type="hidden" name="next" value="{{ next|default:'' }}">
+                    <div class="flex-between mb-3">
+                        <label class="form-check"><input type="checkbox" name="remember"> <span>Remember me</span></label>
+                        <a href="{% url 'password_reset' %}" style="color:var(--primary);font-size:.88rem">Forgot password?</a>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-block btn-lg"><i class="fas fa-sign-in-alt"></i> Sign In</button>
+                </form>
+                <p class="text-center mt-3" style="font-size:.9rem">Don't have an account? <a href="{% url 'register' %}" style="color:var(--primary);font-weight:600">Create one</a></p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

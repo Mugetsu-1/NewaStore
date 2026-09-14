@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400">
+  <rect width="400" height="400" fill="#1a232e"/>
+  <g fill="none" stroke="#2f3e4f" stroke-width="3">
+    <rect x="120" y="150" width="160" height="110" rx="12"/>
+    <circle cx="150" cy="185" r="12"/>
+    <path d="M120 245 L175 195 L215 235 L255 200 L280 225"/>
+  </g>
+  <text x="200" y="300" font-family="sans-serif" font-size="18" fill="#4a5a6a" text-anchor="middle">Newa Store</text>
+</svg>

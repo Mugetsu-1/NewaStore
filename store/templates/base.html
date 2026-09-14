@@ -1,0 +1,247 @@
+{% load static %}
+{% load store_extras %}
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}{{ page_title|default:"Home" }} — {{ site_settings.site_name|default:"Newa Store" }}{% endblock %}</title>
+    <meta name="description" content="{% block meta_description %}{{ meta_description|default:site_settings.meta_description|default:'Shop the latest games, electronics and digital products at Newa Store.' }}{% endblock %}">
+    <meta name="keywords" content="{% block meta_keywords %}{{ site_settings.meta_keywords|default:'ecommerce, games, electronics, online store' }}{% endblock %}">
+    <meta name="csrf-token" content="{{ csrf_token }}">
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="{{ page_title|default:'Newa Store' }}">
+    <meta property="og:description" content="{{ meta_description|default:site_settings.meta_description|default:'Shop the latest products at Newa Store.' }}">
+    <meta property="og:site_name" content="{{ site_settings.site_name|default:'Newa Store' }}">
+    <meta name="twitter:card" content="summary_large_image">
+
+    <link rel="icon" href="{% if site_settings.favicon %}{{ site_settings.favicon.url }}{% else %}{% static 'images/logo.png' %}{% endif %}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    <!-- Tailwind (utility classes for the storefront). Preflight is disabled
+         so it does not reset styles of pages built on the legacy design system. -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        corePlugins: { preflight: false },
+        theme: {
+          extend: {
+            colors: {
+              // Steam-inspired accents that work with the site's CSS vars
+              steam: { blue: '#66c0f4', navy: '#1b2838', deep: '#171a21' },
+              sale: { green: '#a4d007', dark: '#4c6b22' },
+            }
+          }
+        }
+      };
+    </script>
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <!-- Topbar -->
+    <div class="topbar">
+        <div class="container">
+            <div class="topbar-links">
+                {% if site_settings.free_shipping_threshold and site_settings.free_shipping_threshold > 0 %}
+                    <span><i class="fas fa-truck"></i> Free shipping over {{ currency_symbol }} {{ site_settings.free_shipping_threshold|floatformat:0 }}</span>
+                {% else %}
+                    <span><i class="fas fa-key"></i> Instant digital delivery by email</span>
+                {% endif %}
+                <span><i class="fas fa-phone"></i> {{ site_settings.phone|default:'+977-9800000000' }}</span>
+            </div>
+            <div class="topbar-links">
+                <a href="{% url 'shipping_returns' %}">Track Order</a>
+                <a href="{% url 'faq' %}">Help</a>
+                <a href="#" data-theme-toggle><i class="fas fa-sun"></i> Theme</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Header -->
+    <header class="header">
+        <div class="container header-main">
+            <a href="{% url 'home' %}" class="logo">
+                {% if site_settings.logo %}
+                    <img src="{{ site_settings.logo.url }}" alt="{{ site_settings.site_name }}">
+                {% else %}
+                    <i class="fas fa-gamepad" style="color:var(--primary)"></i>
+                {% endif %}
+                <span>{{ site_settings.site_name|default:"Newa" }}<span class="dot">Store</span></span>
+            </a>
+
+            <nav class="nav">
+                <div class="nav-item"><a href="{% url 'home' %}" class="nav-link {% if request.resolver_match.url_name == 'home' %}active{% endif %}">Home</a></div>
+                <div class="nav-item">
+                    <a href="{% url 'product_list' %}" class="nav-link {% if request.resolver_match.url_name == 'product_list' %}active{% endif %}">Shop <i class="fas fa-chevron-down" style="font-size:.6rem"></i></a>
+                    <div class="mega-menu">
+                        {% for cat in nav_categories %}
+                        <a href="{{ cat.get_absolute_url }}"><i class="fas fa-tag" style="opacity:.5;font-size:.75rem"></i> {{ cat.name }}</a>
+                        {% endfor %}
+                        {% if nav_genres %}
+                        <div class="mega-menu-sep"></div>
+                        {% for genre in nav_genres %}
+                        <a href="{% url 'product_list' %}?tag={{ genre.slug }}"><i class="fas fa-dice" style="opacity:.5;font-size:.75rem"></i> {{ genre.name }}</a>
+                        {% endfor %}
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="nav-item"><a href="{% url 'product_list' %}?on_sale_only=1" class="nav-link">Deals</a></div>
+                <div class="nav-item"><a href="{% url 'about' %}" class="nav-link">About</a></div>
+                <div class="nav-item"><a href="{% url 'contact' %}" class="nav-link">Contact</a></div>
+            </nav>
+
+            <div class="search-bar">
+                <form action="{% url 'search' %}" method="get" autocomplete="off">
+                    <input type="text" id="search-input" name="q" placeholder="Search games, genres, more..." value="{{ request.GET.q|default:'' }}">
+                    <button type="submit" aria-label="Search"><i class="fas fa-search"></i></button>
+                </form>
+                <div class="search-suggestions" id="search-suggestions"></div>
+            </div>
+
+            <div class="header-actions">
+                <button class="action-btn menu-toggle" onclick="toggleNav()" aria-label="Menu"><i class="fas fa-bars"></i></button>
+                {% if user.is_authenticated %}
+                <a href="{% url 'wishlist' %}" class="action-btn" title="Wishlist">
+                    <i class="far fa-heart"></i><span class="label">Wishlist</span>
+                </a>
+                {% endif %}
+                <button class="action-btn" onclick="openCart()" title="Cart">
+                    <i class="fas fa-shopping-bag"></i>
+                    <span class="cart-count" data-cart-count {% if not cart or cart.items_count == 0 %}style="display:none"{% endif %}>{{ cart.items_count|default:0 }}</span>
+                    <span class="label">Cart</span>
+                </button>
+                {% if user.is_authenticated %}
+                <div class="nav-item">
+                    <a href="{% url 'profile' %}" class="action-btn" title="Account">
+                        <i class="far fa-user"></i><span class="label">Account</span>
+                    </a>
+                    <div class="mega-menu" style="left:auto;right:0;min-width:200px">
+                        <a href="{% url 'profile' %}"><i class="fas fa-user"></i> Dashboard</a>
+                        <a href="{% url 'order_history' %}"><i class="fas fa-box"></i> My Orders</a>
+                        <a href="{% url 'wishlist' %}"><i class="fas fa-heart"></i> Wishlist</a>
+                        <a href="{% url 'address_list' %}"><i class="fas fa-map-marker-alt"></i> Addresses</a>
+                        <a href="{% url 'change_password' %}"><i class="fas fa-lock"></i> Password</a>
+                        <form action="{% url 'logout' %}" method="post">{% csrf_token %}
+                            <button type="submit" style="background:none;border:none;width:100%;text-align:left;padding:9px 14px;border-radius:8px;color:var(--text-muted);cursor:pointer;font-size:.9rem"><i class="fas fa-sign-out-alt"></i> Logout</button>
+                        </form>
+                    </div>
+                </div>
+                {% else %}
+                <a href="{% url 'login' %}" class="action-btn" title="Login"><i class="far fa-user"></i><span class="label">Login</span></a>
+                {% endif %}
+            </div>
+        </div>
+    </header>
+
+    <!-- Messages -->
+    <div class="messages-wrap">
+        {% for message in messages %}
+        <div class="alert alert-{{ message.tags|default:'info' }}">
+            <i class="fas {% if message.tags == 'success' %}fa-circle-check{% elif message.tags == 'error' %}fa-circle-exclamation{% elif message.tags == 'warning' %}fa-triangle-exclamation{% else %}fa-circle-info{% endif %}"></i>
+            <span>{{ message }}</span>
+            <button class="alert-close" onclick="this.parentElement.remove()">&times;</button>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Cart Drawer -->
+    <div class="drawer-overlay" onclick="closeCart()"></div>
+    <aside class="drawer">
+        <div class="drawer-head">
+            <h3><i class="fas fa-shopping-bag"></i> Your Cart</h3>
+            <button class="btn btn-ghost btn-sm" onclick="closeCart()"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="drawer-body" id="drawer-body" data-url="{% url 'cart_mini' %}">
+            {% include 'store/partials/cart_mini.html' %}
+        </div>
+        <div class="drawer-foot">
+            <a href="{% url 'cart' %}" class="btn btn-outline btn-block mb-1">View Cart</a>
+            <a href="{% url 'checkout' %}" class="btn btn-primary btn-block">Checkout</a>
+        </div>
+    </aside>
+
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+
+    {% block newsletter %}
+    <section class="section">
+        <div class="container">
+            <div class="newsletter-box">
+                <div>
+                    <h2 style="font-size:1.6rem">Join the Newa Store newsletter</h2>
+                    <p class="text-muted mt-1">Get exclusive deals, new arrivals and gaming news straight to your inbox.</p>
+                </div>
+                <form class="newsletter-form" method="post" action="{% url 'newsletter_subscribe' %}" data-newsletter>
+                    {% csrf_token %}
+                    <input type="email" name="email" class="form-control" placeholder="Enter your email address" required>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-paper-plane"></i> Subscribe</button>
+                </form>
+            </div>
+        </div>
+    </section>
+    {% endblock %}
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-grid">
+                <div class="footer-brand">
+                    <a href="{% url 'home' %}" class="logo">
+                        <i class="fas fa-gamepad" style="color:var(--primary)"></i>
+                        <span>{{ site_settings.site_name|default:"Newa" }}<span class="dot">Store</span></span>
+                    </a>
+                    <p>{{ site_settings.site_tagline|default:"Your one-stop destination for games, electronics and digital goods. Shop with confidence." }}</p>
+                    <div class="social">
+                        {% if site_settings.social_facebook %}<a href="{{ site_settings.social_facebook }}" target="_blank"><i class="fab fa-facebook-f"></i></a>{% endif %}
+                        {% if site_settings.social_twitter %}<a href="{{ site_settings.social_twitter }}" target="_blank"><i class="fab fa-x-twitter"></i></a>{% endif %}
+                        {% if site_settings.social_instagram %}<a href="{{ site_settings.social_instagram }}" target="_blank"><i class="fab fa-instagram"></i></a>{% endif %}
+                        {% if site_settings.social_youtube %}<a href="{{ site_settings.social_youtube }}" target="_blank"><i class="fab fa-youtube"></i></a>{% endif %}
+                        {% if site_settings.social_linkedin %}<a href="{{ site_settings.social_linkedin }}" target="_blank"><i class="fab fa-linkedin-in"></i></a>{% endif %}
+                    </div>
+                </div>
+                <div>
+                    <h4>Shop</h4>
+                    <div class="footer-links">
+                        <a href="{% url 'product_list' %}">All Products</a>
+                        <a href="{% url 'product_list' %}?on_sale_only=1">Deals</a>
+                        <a href="{% url 'product_list' %}?sort_by=-created_at">New Arrivals</a>
+                        <a href="{% url 'product_list' %}?sort_by=-is_featured">Featured</a>
+                    </div>
+                </div>
+                <div>
+                    <h4>Company</h4>
+                    <div class="footer-links">
+                        <a href="{% url 'about' %}">About Us</a>
+                        <a href="{% url 'contact' %}">Contact</a>
+                        <a href="{% url 'faq' %}">FAQ</a>
+                        <a href="{% url 'shipping_returns' %}">Shipping & Returns</a>
+                    </div>
+                </div>
+                <div>
+                    <h4>Contact</h4>
+                    <div class="footer-links">
+                        <span class="text-muted"><i class="fas fa-envelope"></i> {{ site_settings.email|default:'support@newastore.com' }}</span>
+                        <span class="text-muted"><i class="fas fa-phone"></i> {{ site_settings.phone|default:'+977-9800000000' }}</span>
+                        <span class="text-muted"><i class="fas fa-map-marker-alt"></i> {{ site_settings.address|default:'Kathmandu, Nepal' }}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>&copy; {% now "Y" %} {{ site_settings.site_name|default:"Newa Store" }}. All rights reserved.</span>
+                <div class="pay-icons">
+                    <i class="fas fa-credit-card" title="Cards"></i>
+                    <i class="fas fa-mobile-alt" title="eSewa / Khalti"></i>
+                    <i class="fab fa-cc-paypal" title="PayPal"></i>
+                    <i class="fas fa-truck" title="Cash on Delivery"></i>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script src="{% static 'js/main.js' %}"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

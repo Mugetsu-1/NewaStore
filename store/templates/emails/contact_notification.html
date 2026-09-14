@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="font-family:Arial,sans-serif;padding:24px;color:#111">
+<h2>New Contact Message</h2>
+<p><strong>Name:</strong> {{ contact.name }}</p>
+<p><strong>Email:</strong> {{ contact.email }}</p>
+<p><strong>Subject:</strong> {{ contact.subject }}</p>
+<p><strong>Message:</strong></p>
+<p style="background:#f1f5f9;padding:16px;border-radius:8px">{{ contact.message|linebreaks }}</p>
+</body>
+</html>

@@ -1,0 +1,13 @@
+{% load static %}
+<aside class="account-nav">
+    <a href="{% url 'profile' %}" class="{% if active == 'dashboard' %}active{% endif %}"><i class="fas fa-th-large"></i> Dashboard</a>
+    <a href="{% url 'order_history' %}" class="{% if active == 'orders' %}active{% endif %}"><i class="fas fa-box"></i> My Orders</a>
+    <a href="{% url 'wishlist' %}" class="{% if active == 'wishlist' %}active{% endif %}"><i class="fas fa-heart"></i> Wishlist</a>
+    <a href="{% url 'my_reviews' %}" class="{% if active == 'reviews' %}active{% endif %}"><i class="fas fa-star"></i> My Reviews</a>
+    <a href="{% url 'address_list' %}" class="{% if active == 'addresses' %}active{% endif %}"><i class="fas fa-map-marker-alt"></i> Addresses</a>
+    <a href="{% url 'profile_edit' %}" class="{% if active == 'profile' %}active{% endif %}"><i class="fas fa-user-edit"></i> Edit Profile</a>
+    <a href="{% url 'change_password' %}" class="{% if active == 'password' %}active{% endif %}"><i class="fas fa-lock"></i> Password</a>
+    <form action="{% url 'logout' %}" method="post">{% csrf_token %}
+        <button type="submit" style="display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:8px;color:var(--danger);font-weight:600;font-size:.9rem;background:none;border:none;width:100%;cursor:pointer"><i class="fas fa-sign-out-alt"></i> Logout</button>
+    </form>
+</aside>

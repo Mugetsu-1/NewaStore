@@ -1,0 +1,114 @@
+{% extends 'base.html' %}
+{% load static store_extras %}
+
+{% block content %}
+<div class="container">
+    <nav class="breadcrumb">
+        <a href="{% url 'home' %}"><i class="fas fa-home"></i> Home</a>
+        <i class="fas fa-chevron-right" style="font-size:.6rem"></i>
+        <span>{{ page_title }}</span>
+    </nav>
+
+    <div class="shop-layout">
+        <!-- Filters sidebar -->
+        <aside class="filters">
+            <h3 style="font-size:1.05rem;margin-bottom:12px"><i class="fas fa-filter"></i> Filters</h3>
+            <form method="get" id="filter-form">
+                <div class="filter-block">
+                    <h4>Search</h4>
+                    <div class="flex gap-2">
+                        <input type="text" name="q" class="form-control" placeholder="Game title..." value="{{ request.GET.q|default:'' }}">
+                    </div>
+                </div>
+
+                {% if genres %}
+                <div class="filter-block">
+                    <h4>Genre</h4>
+                    <div class="filter-list">
+                        <label><input type="radio" name="tag" value="" {% if not request.GET.tag %}checked{% endif %}> All Genres</label>
+                        {% for genre in genres %}
+                        <label>
+                            <input type="radio" name="tag" value="{{ genre.slug }}" {% if request.GET.tag == genre.slug %}checked{% endif %}>
+                            {{ genre.name }} <span class="text-muted" style="font-size:.75rem">({{ genre.product_count }})</span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if nav_categories %}
+                <div class="filter-block">
+                    <h4>Category</h4>
+                    <div class="filter-list">
+                        <label><input type="radio" name="category" value="" {% if not request.GET.category %}checked{% endif %}> All</label>
+                        {% for cat in nav_categories %}
+                        <label><input type="radio" name="category" value="{{ cat.slug }}" {% if request.GET.category == cat.slug %}checked{% endif %}> {{ cat.name }}</label>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
+                <div class="filter-block">
+                    <h4>Price Range ({{ currency_symbol }})</h4>
+                    <div class="form-row">
+                        <input type="number" name="min_price" class="form-control" placeholder="Min" value="{{ request.GET.min_price|default:'' }}" min="0">
+                        <input type="number" name="max_price" class="form-control" placeholder="Max" value="{{ request.GET.max_price|default:'' }}" min="0">
+                    </div>
+                </div>
+
+                <div class="filter-block">
+                    <h4>Deals</h4>
+                    <div class="filter-list">
+                        <label><input type="checkbox" name="on_sale_only" value="1" {% if request.GET.on_sale_only %}checked{% endif %}> On Sale Only</label>
+                        <label><input type="checkbox" name="in_stock_only" value="1" {% if request.GET.in_stock_only %}checked{% endif %}> In Stock Only</label>
+                    </div>
+                </div>
+
+                <div class="filter-block">
+                    <button type="submit" class="btn btn-primary btn-block"><i class="fas fa-check"></i> Apply Filters</button>
+                    <a href="{% url 'product_list' %}" class="btn btn-ghost btn-block mt-1">Clear All</a>
+                </div>
+            </form>
+        </aside>
+
+        <!-- Results -->
+        <div>
+            <div class="flex-between mb-3" style="flex-wrap:wrap;gap:12px">
+                <div>
+                    <h2 style="font-size:1.4rem">{{ page_title }}</h2>
+                    <p class="text-muted" style="font-size:.88rem">{{ total_count }} game{{ total_count|pluralize }} found</p>
+                </div>
+                <form method="get" id="sort-form">
+                    {% for key, val in request.GET.items %}
+                        {% if key != 'sort_by' and key != 'page' %}<input type="hidden" name="{{ key }}" value="{{ val }}">{% endif %}
+                    {% endfor %}
+                    <select name="sort_by" class="form-control" style="min-width:200px" onchange="document.getElementById('sort-form').submit()">
+                        <option value="-created_at" {% if request.GET.sort_by == '-created_at' %}selected{% endif %}>Newest</option>
+                        <option value="price" {% if request.GET.sort_by == 'price' %}selected{% endif %}>Price: Low to High</option>
+                        <option value="-price" {% if request.GET.sort_by == '-price' %}selected{% endif %}>Price: High to Low</option>
+                        <option value="name" {% if request.GET.sort_by == 'name' %}selected{% endif %}>Name: A-Z</option>
+                        <option value="-name" {% if request.GET.sort_by == '-name' %}selected{% endif %}>Name: Z-A</option>
+                        <option value="-is_featured" {% if request.GET.sort_by == '-is_featured' %}selected{% endif %}>Featured</option>
+                    </select>
+                </form>
+            </div>
+
+            {% if products %}
+            <div class="product-grid">
+                {% for product in products %}
+                    {% include 'store/partials/product_card.html' %}
+                {% endfor %}
+            </div>
+            {% include 'store/partials/pagination.html' %}
+            {% else %}
+            <div class="empty">
+                <i class="fas fa-search"></i>
+                <h3>No games found</h3>
+                <p>Try adjusting your filters or search terms.</p>
+                <a href="{% url 'product_list' %}" class="btn btn-primary">Clear Filters</a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

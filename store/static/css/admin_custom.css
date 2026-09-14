@@ -1,0 +1,48 @@
+/* ============================================================
+   Newa Store — Admin customizations (Jazzmin)
+   ============================================================ */
+
+/* Fix for Jazzmin long button text */
+.submit-row button,
+.submit-row a.btn {
+    white-space: normal !important;
+    word-wrap: break-word !important;
+    height: auto !important;
+    padding-top: 8px !important;
+    padding-bottom: 8px !important;
+    line-height: 1.4 !important;
+}
+
+/* Product thumbnail column a touch larger */
+#result_list td.field-image_thumbnail img,
+#result_list td.field-image_preview img {
+    border-radius: 6px;
+    object-fit: cover;
+}
+
+/* Nicer status pills in lists */
+#result_list .badge {
+    padding: 4px 8px;
+    border-radius: 999px;
+    font-weight: 600;
+}
+
+/* Slightly denser change list */
+#result_list.table th,
+#result_list.table td {
+    vertical-align: middle;
+}
+
+/* Dashboard module hover lift */
+.dashboard .module {
+    transition: box-shadow .2s ease, transform .2s ease;
+}
+.dashboard .module:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, .28);
+}
+
+/* Brand accent on the header welcome text */
+.brand-link .brand-text {
+    letter-spacing: .3px;
+}

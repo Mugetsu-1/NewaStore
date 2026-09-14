@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+{% load static store_extras %}
+
+{% block content %}
+<div class="container">
+    <nav class="breadcrumb">
+        <a href="{% url 'home' %}"><i class="fas fa-home"></i> Home</a>
+        <i class="fas fa-chevron-right" style="font-size:.6rem"></i>
+        <a href="{% url 'product_list' %}">Shop</a>
+        <i class="fas fa-chevron-right" style="font-size:.6rem"></i>
+        <span>{{ category.name }}</span>
+    </nav>
+
+    <div class="section-head">
+        <div>
+            <h2>{{ category.name }}</h2>
+            {% if category.description %}<p class="text-muted">{{ category.description }}</p>{% endif %}
+        </div>
+        <span class="text-muted">{{ page_obj.paginator.count }} product{{ page_obj.paginator.count|pluralize }}</span>
+    </div>
+
+    {% if subcategories %}
+    <div class="flex gap-2 mb-3" style="flex-wrap:wrap">
+        {% for sub in subcategories %}
+        <a href="{{ sub.get_absolute_url }}" class="btn btn-outline btn-sm">{{ sub.name }}</a>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="flex-between mb-3">
+        <span class="text-muted" style="font-size:.88rem">Showing {{ products|length }} product{{ products|length|pluralize }}</span>
+        <form method="get">
+            <select name="sort_by" class="form-control" style="min-width:200px" onchange="this.form.submit()">
+                <option value="-created_at" {% if request.GET.sort_by == '-created_at' %}selected{% endif %}>Newest</option>
+                <option value="price" {% if request.GET.sort_by == 'price' %}selected{% endif %}>Price: Low to High</option>
+                <option value="-price" {% if request.GET.sort_by == '-price' %}selected{% endif %}>Price: High to Low</option>
+                <option value="name" {% if request.GET.sort_by == 'name' %}selected{% endif %}>Name: A-Z</option>
+            </select>
+        </form>
+    </div>
+
+    {% if products %}
+    <div class="product-grid product-grid-4">
+        {% for product in products %}
+            {% include 'store/partials/product_card.html' %}
+        {% endfor %}
+    </div>
+    {% include 'store/partials/pagination.html' %}
+    {% else %}
+    <div class="empty">
+        <i class="fas fa-box-open"></i>
+        <h3>No products in this category</h3>
+        <p>Check back soon or explore other categories.</p>
+        <a href="{% url 'product_list' %}" class="btn btn-primary">Browse All Products</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

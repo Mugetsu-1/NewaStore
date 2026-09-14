@@ -1,0 +1,24 @@
+{% load static store_extras %}
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
+    <div>
+        {% with img=product.images.first %}
+        <img src="{% if img and img.src_url %}{{ img.src_url }}{% else %}{% static 'images/placeholder.svg' %}{% endif %}" alt="{{ product.name }}" style="width:100%;border-radius:12px">
+        {% endwith %}
+    </div>
+    <div>
+        <h2 style="font-size:1.3rem">{{ product.name }}</h2>
+        <div class="product-rating">{{ product.average_rating|stars }} <span>({{ product.review_count }})</span></div>
+        <div class="pd-price">
+            <span class="price-current">{{ currency_symbol }} {{ product.current_price|floatformat:2 }}</span>
+            {% if product.discount_price %}<span class="price-old">{{ currency_symbol }} {{ product.price|floatformat:2 }}</span>{% endif %}
+        </div>
+        <p class="text-muted" style="font-size:.9rem">{{ product.short_description|default:product.description|truncatewords:30 }}</p>
+        <form action="{% url 'add_to_cart' product.id %}" method="post" data-ajax-cart>
+            {% csrf_token %}
+            <button type="submit" class="btn btn-primary btn-block" {% if not product.is_in_stock %}disabled{% endif %}>
+                <i class="fas fa-cart-plus"></i> Add to Cart
+            </button>
+        </form>
+        <a href="{{ product.get_absolute_url }}" class="btn btn-outline btn-block mt-1">View Details</a>
+    </div>
+</div>

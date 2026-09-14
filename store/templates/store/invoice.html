@@ -1,0 +1,41 @@
+{% load static store_extras %}
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Invoice {{ order.order_number }}</title>
+<style>
+body{font-family:Arial,sans-serif;color:#111;margin:0;padding:40px;background:#fff}
+.head{display:flex;justify-content:space-between;border-bottom:2px solid #22c55e;padding-bottom:20px}
+h1{margin:0;color:#16a34a}
+table{width:100%;border-collapse:collapse;margin-top:24px}
+th,td{padding:10px;border-bottom:1px solid #ddd;text-align:left}
+.totals{margin-top:20px;width:300px;margin-left:auto}
+.totals tr td:last-child{text-align:right}
+.big{font-size:1.3rem;font-weight:bold;color:#16a34a}
+</style>
+</head>
+<body>
+<div class="head">
+  <div><h1>NEWA STORE</h1><p>Invoice / Receipt</p></div>
+  <div style="text-align:right"><strong>Order:</strong> {{ order.order_number }}<br><strong>Date:</strong> {{ order.created_at|date:"M d, Y" }}<br><strong>Status:</strong> {{ order.get_status_display }}</div>
+</div>
+<p><strong>Bill To:</strong> {{ order.billing_address.full_name }} — {{ order.billing_address.city }}, {{ order.billing_address.country }}</p>
+<table>
+  <thead><tr><th>Item</th><th>Qty</th><th>Unit</th><th>Total</th></tr></thead>
+  <tbody>
+  {% for item in order.items.all %}
+    <tr><td>{{ item.product_name }}{% if item.variant_name %} ({{ item.variant_name }}){% endif %}</td><td>{{ item.quantity }}</td><td>{{ currency_symbol }} {{ item.unit_price|floatformat:2 }}</td><td>{{ currency_symbol }} {{ item.total_price|floatformat:2 }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+<table class="totals">
+  <tr><td>Subtotal</td><td>{{ currency_symbol }} {{ order.subtotal|floatformat:2 }}</td></tr>
+  <tr><td>Discount</td><td>-{{ currency_symbol }} {{ order.discount_amount|floatformat:2 }}</td></tr>
+  <tr><td>Shipping</td><td>{{ currency_symbol }} {{ order.shipping_cost|floatformat:2 }}</td></tr>
+  <tr><td>Tax</td><td>{{ currency_symbol }} {{ order.tax_amount|floatformat:2 }}</td></tr>
+  <tr class="big"><td>Total</td><td>{{ currency_symbol }} {{ order.total|floatformat:2 }}</td></tr>
+</table>
+<script>window.print && window.print();</script>
+</body>
+</html>

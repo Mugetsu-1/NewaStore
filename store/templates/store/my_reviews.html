@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% load static store_extras %}
+
+{% block content %}
+<div class="container">
+    <nav class="breadcrumb">
+        <a href="{% url 'home' %}"><i class="fas fa-home"></i> Home</a>
+        <i class="fas fa-chevron-right" style="font-size:.6rem"></i>
+        <a href="{% url 'profile' %}">Account</a>
+        <i class="fas fa-chevron-right" style="font-size:.6rem"></i>
+        <span>My Reviews</span>
+    </nav>
+    <div class="account-layout">
+        {% include 'store/partials/account_nav.html' with active='reviews' %}
+        <div>
+            <h1 style="font-size:1.5rem;margin-bottom:20px">My Reviews</h1>
+            {% if reviews %}
+                {% for review in reviews %}
+                <div class="checkout-section">
+                    <div class="flex-between mb-2" style="flex-wrap:wrap;gap:10px">
+                        <a href="{{ review.product.get_absolute_url }}" style="font-weight:700">{{ review.product.name }}</a>
+                        <div>{{ review.rating|stars }} <span class="text-muted" style="font-size:.82rem">{{ review.created_at|date:"M d, Y" }}</span></div>
+                    </div>
+                    {% if review.title %}<strong>{{ review.title }}</strong>{% endif %}
+                    <p class="text-muted" style="margin-top:6px">{{ review.comment }}</p>
+                    <span class="badge {% if review.is_approved %}badge-success{% else %}badge-warning{% endif %}">{% if review.is_approved %}Published{% else %}Pending approval{% endif %}</span>
+                </div>
+                {% endfor %}
+            {% else %}
+            <div class="empty"><i class="fas fa-star"></i><h3>No reviews yet</h3><p>Review products you've purchased to help others.</p><a href="{% url 'order_history' %}" class="btn btn-primary">View Orders</a></div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,181 @@
+{% extends 'base.html' %}
+{% load static store_extras %}
+
+{% block content %}
+{% if hero_slides %}
+<!-- Hero: featured games carousel with real game art (Steam / Epic style) -->
+<section class="hero hero-game">
+    {% for slide in hero_slides %}
+    <div class="hero-slide {% if forloop.first %}active{% endif %}">
+        <div class="hero-game-bg" style="background-image:url('{{ slide.bg_url }}')"></div>
+        <div class="hero-game-overlay"></div>
+        <div class="container position-relative" style="z-index:2">
+            <div class="hero-game-inner">
+                <div>
+                    <span class="hero-tag"><i class="fas fa-bolt"></i> Featured &amp; Recommended</span>
+                    <h1 class="line-clamp-2">{{ slide.product.name }}</h1>
+                    <p class="hero-desc">{{ slide.product.short_description }}</p>
+                    {% if slide.product.tags.all %}
+                    <div class="hero-genres">
+                        {% for tag in slide.product.tags.all|slice:":4" %}
+                        <a href="{% url 'product_list' %}?tag={{ tag.slug }}" class="genre-chip">{{ tag.name }}</a>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                    <div class="hero-actions">
+                        <a href="{{ slide.product.get_absolute_url }}" class="btn btn-primary btn-lg">
+                            <i class="fas fa-gamepad"></i> View Game
+                        </a>
+                        <div class="hero-price">
+                            {% if slide.product.discount_price %}
+                                <span class="price-old">{{ currency_symbol }} {{ slide.product.price|floatformat:0 }}</span>
+                                <span class="discount-tag discount-tag-lg">-{{ slide.product.discount_percentage }}%</span>
+                            {% endif %}
+                            <span class="price-current">{{ currency_symbol }} {{ slide.product.current_price|floatformat:0 }}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="hero-game-art">
+                    <img src="{{ slide.art_url }}" alt="{{ slide.product.name }}">
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+    <div class="hero-dots">
+        {% for slide in hero_slides %}
+        <button class="hero-dot {% if forloop.first %}active{% endif %}" aria-label="Slide {{ forloop.counter }}"></button>
+        {% endfor %}
+    </div>
+</section>
+{% else %}
+<!-- Hero fallback (empty store) -->
+<section class="hero">
+    <div class="container">
+        <div class="hero-inner">
+            <div>
+                <span class="hero-tag"><i class="fas fa-gamepad"></i> Digital Game Store</span>
+                <h1>Real Games. <span>Real Prices.</span></h1>
+                <p>Thousands of digital PC game keys with live international price data — delivered instantly to your inbox.</p>
+                <div class="hero-actions">
+                    <a href="{% url 'product_list' %}" class="btn btn-primary btn-lg"><i class="fas fa-shopping-bag"></i> Browse Store</a>
+                </div>
+            </div>
+            <div class="hero-image">
+                <img src="{% static 'images/hero.svg' %}" alt="Featured games">
+            </div>
+        </div>
+    </div>
+</section>
+{% endif %}
+
+<!-- Trust features -->
+<section class="section-sm">
+    <div class="container">
+        <div class="features">
+            <div class="feature"><i class="fas fa-key"></i><div><h4>Instant Delivery</h4><p>Game keys sent by email</p></div></div>
+            <div class="feature"><i class="fas fa-shield-halved"></i><div><h4>Secure Payments</h4><p>eSewa, Khalti, Cards</p></div></div>
+            <div class="feature"><i class="fas fa-tags"></i><div><h4>Live Price Data</h4><p>Real international prices</p></div></div>
+            <div class="feature"><i class="fas fa-headset"></i><div><h4>24/7 Support</h4><p>We're always here to help</p></div></div>
+        </div>
+    </div>
+</section>
+
+<!-- Browse by genre -->
+{% if genres %}
+<section class="section-sm">
+    <div class="container">
+        <div class="flex-between mb-3" style="flex-wrap:wrap;gap:12px">
+            <div><h2 style="font-size:1.4rem">Browse by Genre</h2></div>
+        </div>
+        <div class="genre-chip-row">
+            {% for genre in genres %}
+            <a href="{% url 'product_list' %}?tag={{ genre.slug }}" class="genre-chip genre-chip-lg">
+                {{ genre.name }} <span class="chip-count">{{ genre.product_count }}</span>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+{% endif %}
+
+<!-- Featured & Recommended -->
+{% if featured_products %}
+<section class="section" style="background:var(--bg-alt)">
+    <div class="container">
+        <div class="section-head">
+            <div><h2>Featured &amp; Recommended</h2><p>Top-rated games, hand-picked from live Metacritic data</p></div>
+            <a href="{% url 'product_list' %}?sort_by=-is_featured" class="view-all">View all <i class="fas fa-arrow-right"></i></a>
+        </div>
+        <div class="product-grid">
+            {% for product in featured_products %}
+                {% include 'store/partials/product_card.html' %}
+            {% endfor %}
+        </div>
+    </div>
+</section>
+{% endif %}
+
+<!-- Special Deals -->
+{% if deal_products %}
+<section class="section">
+    <div class="container">
+        <div class="section-head">
+            <div><h2>🔥 Special Deals</h2><p>Live discounts pulled from international stores</p></div>
+            <a href="{% url 'product_list' %}?on_sale_only=1" class="view-all">All deals <i class="fas fa-arrow-right"></i></a>
+        </div>
+        <div class="product-grid">
+            {% for product in deal_products %}
+                {% include 'store/partials/product_card.html' %}
+            {% endfor %}
+        </div>
+    </div>
+</section>
+{% endif %}
+
+<!-- New Releases -->
+{% if new_arrivals %}
+<section class="section" style="background:var(--bg-alt)">
+    <div class="container">
+        <div class="section-head">
+            <div><h2>New Releases</h2><p>Fresh titles added to the catalog</p></div>
+            <a href="{% url 'product_list' %}?sort_by=-created_at" class="view-all">View all <i class="fas fa-arrow-right"></i></a>
+        </div>
+        <div class="product-grid">
+            {% for product in new_arrivals %}
+                {% include 'store/partials/product_card.html' %}
+            {% endfor %}
+        </div>
+    </div>
+</section>
+{% endif %}
+
+<!-- Best Sellers -->
+{% if best_sellers %}
+<section class="section">
+    <div class="container">
+        <div class="section-head">
+            <div><h2>Best Sellers</h2><p>What everyone is buying</p></div>
+        </div>
+        <div class="product-grid">
+            {% for product in best_sellers %}
+                {% include 'store/partials/product_card.html' %}
+            {% endfor %}
+        </div>
+    </div>
+</section>
+{% endif %}
+
+<!-- Empty store fallback -->
+{% if not featured_products and not new_arrivals and not deal_products %}
+<section class="section">
+    <div class="container">
+        <div class="empty">
+            <i class="fas fa-store"></i>
+            <h3>No games yet</h3>
+            <p>Run <code>python populate_db.py --reset</code> to import the live catalog from the CheapShark API.</p>
+        </div>
+    </div>
+</section>
+{% endif %}
+{% endblock %}

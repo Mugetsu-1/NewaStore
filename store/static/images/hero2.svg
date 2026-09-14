@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="450" viewBox="0 0 600 450" fill="none">
+  <defs>
+    <linearGradient id="hg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f59e0b"/>
+      <stop offset="1" stop-color="#ef4444"/>
+    </linearGradient>
+    <linearGradient id="bg2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1a232e"/>
+      <stop offset="1" stop-color="#0b0f14"/>
+    </linearGradient>
+  </defs>
+  <rect x="20" y="20" width="560" height="410" rx="28" fill="url(#bg2)" stroke="#24303d" stroke-width="2"/>
+  <path d="M300 70 L355 180 L475 195 L385 275 L410 395 L300 330 L190 395 L215 275 L125 195 L245 180 Z" fill="url(#hg)" opacity="0.9"/>
+  <circle cx="300" cy="235" r="60" fill="#0b0f14" opacity="0.85"/>
+  <text x="300" y="255" font-family="Poppins, sans-serif" font-size="42" font-weight="800" fill="#fff" text-anchor="middle">50%</text>
+  <text x="300" y="285" font-family="Inter, sans-serif" font-size="18" fill="#f59e0b" text-anchor="middle">OFF</text>
+</svg>

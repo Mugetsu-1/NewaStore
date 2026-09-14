@@ -1,0 +1,8 @@
+Django>=5.2,<6.1
+Pillow>=10.0
+django-jazzmin>=3.0
+reportlab>=4.0
+whitenoise>=6.6
+requests>=2.31
+psycopg[binary]>=3.2
+python-dotenv>=1.0
