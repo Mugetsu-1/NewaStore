@@ -2,6 +2,7 @@ from django import forms
 from django.contrib.auth.forms import UserCreationForm, UserChangeForm, PasswordResetForm
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
+from .payments import available_payment_methods
 from .models import (
     Product, ProductImage, ProductVariant, Review, Category, Tag,
     Coupon, Address, Cart, CartItem, Wishlist, WishlistItem,
@@ -294,7 +295,7 @@ class CheckoutForm(forms.Form):
         ('bank_transfer', 'Bank Transfer'),
     ]
     payment_method = forms.ChoiceField(choices=PAYMENT_CHOICES, widget=forms.RadioSelect, initial='cod')
-    
+
     # Additional
     order_notes = forms.CharField(widget=forms.Textarea(attrs={'rows': 3}), required=False, label='Order Notes')
     save_info = forms.BooleanField(required=False, label='Save this information for next time')
@@ -305,6 +306,8 @@ class CheckoutForm(forms.Form):
         self.cart = kwargs.pop('cart', None)
         super().__init__(*args, **kwargs)
         self.fields['shipping_method'].queryset = ShippingMethod.objects.filter(is_active=True)
+        # Only surface gateways that are actually configured (see payments.py)
+        self.fields['payment_method'].choices = available_payment_methods()
 
         if self.user and getattr(self.user, 'is_authenticated', False):
             addresses = self.user.addresses.all()

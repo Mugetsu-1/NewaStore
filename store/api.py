@@ -18,7 +18,7 @@ from rest_framework import serializers
 from rest_framework.decorators import api_view, throttle_classes
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
-from rest_framework.throttling import ScopedRateThrottle
+from rest_framework.throttling import SimpleRateThrottle
 
 from .models import Product, Tag, SiteSettings
 from .forms import ContactForm
@@ -31,8 +31,13 @@ class APIPagination(PageNumberPagination):
     max_page_size = 100
 
 
-class ContactRateThrottle(ScopedRateThrottle):
+class ContactRateThrottle(SimpleRateThrottle):
+    """Limits POST /api/contact/ to 5/min/IP (rate defined in REST_FRAMEWORK)."""
     scope = 'contact'
+
+    def get_cache_key(self, request, view):
+        ident = self.get_ident(request)
+        return self.cache_format % {'scope': self.scope, 'ident': ident}
 
 
 class GenreSerializer(serializers.Serializer):
