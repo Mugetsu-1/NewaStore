@@ -1,0 +1,34 @@
+{% load store_extras %}<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="font-family:Arial,sans-serif;background:#f4f6f8;padding:24px;color:#111">
+<div style="max-width:600px;margin:auto;background:#fff;border-radius:12px;overflow:hidden">
+  <div style="background:#16a34a;padding:24px;color:#fff">
+    <h1 style="margin:0;font-size:22px">Payment received</h1>
+    <p style="margin:6px 0 0">Thank you for your purchase at {{ site_settings.site_name|default:"Newa Store" }}!</p>
+  </div>
+  <div style="padding:24px">
+    <p>Hi {{ order.customer_name }},</p>
+    <p>We've received your payment for order <strong>{{ order.order_number }}</strong>
+       via <strong>{{ order.get_payment_method_display }}</strong> (transaction
+       {% if order.payment_transaction_id %}<code>{{ order.payment_transaction_id }}</code>{% else %}#{{ order.id }}{% endif %}).</p>
+    <table style="width:100%;border-collapse:collapse;margin:16px 0">
+      <thead><tr style="background:#f1f5f9;text-align:left"><th style="padding:8px">Item</th><th style="padding:8px">Qty</th><th style="padding:8px">Total</th></tr></thead>
+      <tbody>
+      {% for item in order.items.all %}
+        <tr><td style="padding:8px;border-bottom:1px solid #eee">{{ item.product_name }}</td><td style="padding:8px;border-bottom:1px solid #eee">{{ item.quantity }}</td><td style="padding:8px;border-bottom:1px solid #eee">{{ currency_symbol }} {{ item.total_price|floatformat:2 }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p style="text-align:right"><strong>Subtotal: {{ currency_symbol }} {{ order.subtotal|floatformat:2 }}</strong></p>
+    {% if order.discount_amount %}<p style="text-align:right;color:#16a34a"><strong>Discount: -{{ currency_symbol }} {{ order.discount_amount|floatformat:2 }}</strong></p>{% endif %}
+    {% if order.shipping_cost %}<p style="text-align:right">Shipping: {{ currency_symbol }} {{ order.shipping_cost|floatformat:2 }}</p>{% endif %}
+    <p style="text-align:right">Tax: {{ currency_symbol }} {{ order.tax_amount|floatformat:2 }}</p>
+    <p style="text-align:right;font-size:18px"><strong>Total: {{ currency_symbol }} {{ order.total|floatformat:2 }}</strong></p>
+    <p>Your order is confirmed and will be delivered according to the chosen method.
+       For digital items, delivery instructions are on your <a href="{{ order_url }}">order page</a>.</p>
+    <p>— The {{ site_settings.site_name|default:"Newa Store" }} Team</p>
+  </div>
+</div>
+</body>
+</html>

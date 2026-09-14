@@ -72,17 +72,17 @@
         </aside>
 
         <!-- Results -->
-        <div>
+        <div id="shop-results">
             <div class="flex-between mb-3" style="flex-wrap:wrap;gap:12px">
                 <div>
                     <h2 style="font-size:1.4rem">{{ page_title }}</h2>
-                    <p class="text-muted" style="font-size:.88rem">{{ total_count }} game{{ total_count|pluralize }} found</p>
+                    <p class="text-muted" style="font-size:.88rem" id="result-count">{{ total_count }} game{{ total_count|pluralize }} found</p>
                 </div>
                 <form method="get" id="sort-form">
                     {% for key, val in request.GET.items %}
                         {% if key != 'sort_by' and key != 'page' %}<input type="hidden" name="{{ key }}" value="{{ val }}">{% endif %}
                     {% endfor %}
-                    <select name="sort_by" class="form-control" style="min-width:200px" onchange="document.getElementById('sort-form').submit()">
+                    <select name="sort_by" class="form-control" style="min-width:200px">
                         <option value="-created_at" {% if request.GET.sort_by == '-created_at' %}selected{% endif %}>Newest</option>
                         <option value="price" {% if request.GET.sort_by == 'price' %}selected{% endif %}>Price: Low to High</option>
                         <option value="-price" {% if request.GET.sort_by == '-price' %}selected{% endif %}>Price: High to Low</option>
@@ -94,12 +94,14 @@
             </div>
 
             {% if products %}
-            <div class="product-grid">
+            <div class="product-grid" data-total="{{ total_count }}" data-has-next="{{ page_obj.has_next|yesno:'true,false' }}">
                 {% for product in products %}
                     {% include 'store/partials/product_card.html' %}
                 {% endfor %}
             </div>
-            {% include 'store/partials/pagination.html' %}
+            <div id="pagination-slot">
+                {% include 'store/partials/pagination.html' %}
+            </div>
             {% else %}
             <div class="empty">
                 <i class="fas fa-search"></i>

@@ -1,0 +1,87 @@
+{% extends 'base.html' %}
+{% load static store_extras %}
+
+{% block content %}
+<div class="container section" style="max-width:620px">
+    <div class="checkout-section">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+            <i class="fas fa-credit-card" style="font-size:1.4rem;color:#635bff"></i>
+            <h1 style="font-size:1.5rem">Pay with Card</h1>
+        </div>
+        <p class="text-muted mb-4">
+            Order <strong>{{ order.order_number }}</strong> · Total
+            <strong>{{ currency_symbol }} {{ order.total|floatformat:2 }}</strong>
+            {% if stripe_currency != 'npr' %}(billed in {{ stripe_currency|upper }} by Stripe){% endif %}
+        </p>
+
+        <div id="stripe-payment-element">
+            <div class="text-muted"><i class="fas fa-spinner fa-spin"></i> Loading secure payment form…</div>
+        </div>
+        <div id="stripe-errors" class="form-error" style="display:none;margin-top:12px"></div>
+
+        <button id="stripe-pay" class="btn btn-primary btn-lg btn-block mt-3">
+            <i class="fas fa-lock"></i> Pay {{ currency_symbol }} {{ order.total|floatformat:2 }}
+        </button>
+        <a href="{% url 'home' %}" class="btn btn-ghost btn-block mt-2">Cancel</a>
+        <p class="text-muted text-center mt-3" style="font-size:.78rem">
+            Payments are processed securely by Stripe — your card details never touch our servers.
+        </p>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://js.stripe.com/v3/"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const ORDER = '{{ order.order_number|escapejs }}';
+  const PK = '{{ stripe_public_key|escapejs }}';
+  const payBtn = document.getElementById('stripe-pay');
+  const errorBox = document.getElementById('stripe-errors');
+  const csrftoken = document.cookie.match('(^|;)\\s*csrftoken\\s*=\\s*([^;]+)')?.pop() || '';
+
+  function showError(msg) { errorBox.textContent = msg; errorBox.style.display = 'block'; }
+
+  async function createIntent() {
+    const res = await fetch('/payment/stripe/' + ORDER + '/intent/', {
+      method: 'POST',
+      headers: { 'X-CSRFToken': csrftoken, 'X-Requested-With': 'XMLHttpRequest' },
+    });
+    return res.json();
+  }
+
+  if (!window.Stripe || !PK) {
+    showError('Stripe is not configured yet. Please choose another payment method.');
+    payBtn.disabled = true;
+    return;
+  }
+
+  const stripe = Stripe(PK);
+  const elements = stripe.elements();
+  const paymentElement = elements.create('payment');
+  paymentElement.mount('#stripe-payment-element');
+
+  payBtn.addEventListener('click', async function () {
+    payBtn.disabled = true;
+    try {
+      const data = await createIntent();
+      if (!data.success) { showError(data.error || 'Could not start payment.'); return; }
+      if (data.already_paid) { window.location.href = '/order/success/' + ORDER + '/'; return; }
+      // On success Stripe redirects to stripe_success with ?payment_intent=…
+      const { error } = await stripe.confirmPayment({
+        elements,
+        clientSecret: data.client_secret,
+        confirmParams: {
+          return_url: window.location.origin + '/payment/stripe/' + ORDER + '/success/',
+        },
+      });
+      if (error) showError(error.message || 'Payment failed.');
+    } catch (err) {
+      showError('Something went wrong while contacting Stripe.');
+    } finally {
+      payBtn.disabled = false;
+    }
+  });
+});
+</script>
+{% endblock %}

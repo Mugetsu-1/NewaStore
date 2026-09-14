@@ -6,3 +6,6 @@ whitenoise>=6.6
 requests>=2.31
 psycopg[binary]>=3.2
 python-dotenv>=1.0
+djangorestframework>=3.15
+stripe>=10.0
+cryptography>=42.0

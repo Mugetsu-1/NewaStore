@@ -1,4 +1,9 @@
+import csv
+from decimal import Decimal
+
 from django.contrib import admin
+from django.db.models import Sum
+from django.http import HttpResponse
 from django.utils.html import format_html
 from django.urls import reverse
 from django.utils.safestring import mark_safe
@@ -70,6 +75,7 @@ class TagAdmin(admin.ModelAdmin):
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
+    actions = ['export_products_csv']
     list_display = ['image_thumbnail', 'name', 'sku', 'category', 'price', 'discount_price',
                     'data_source', 'stock_quantity',
                     'is_active', 'is_featured', 'is_in_stock', 'created_at']
@@ -129,6 +135,20 @@ class ProductAdmin(admin.ModelAdmin):
             return mark_safe('<span style="color: green;">✓ In Stock</span>')
         return mark_safe('<span style="color: red;">✗ Out of Stock</span>')
     is_in_stock.short_description = 'Stock Status'
+
+
+    def export_products_csv(self, request, queryset):
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="products.csv"'
+        writer = csv.writer(response)
+        writer.writerow(['ID', 'Name', 'Slug', 'Category', 'Price', 'Discount',
+                         'Current', 'Steam App ID', 'Source', 'Created'])
+        for p in queryset.select_related('category'):
+            writer.writerow([p.id, p.name, p.slug, p.category.name if p.category else '',
+                             p.price, p.discount_price or '', p.current_price,
+                             p.steam_app_id or '', p.data_source, p.created_at.isoformat()])
+        return response
+    export_products_csv.short_description = 'Export selected products as CSV'
 
 
 @admin.register(ProductImage)
@@ -254,6 +274,7 @@ class OrderStatusHistoryInline(admin.TabularInline):
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
+    change_list_template = 'admin/store/order/change_list.html'
     list_display = ['order_number', 'user', 'guest_email', 'status', 'payment_status', 'payment_method', 
                     'total', 'created_at']
     list_filter = ['status', 'payment_status', 'payment_method', 'created_at']
@@ -289,7 +310,7 @@ class OrderAdmin(admin.ModelAdmin):
         }),
     )
 
-    actions = ['mark_confirmed', 'mark_processing', 'mark_shipped', 'mark_delivered', 'mark_cancelled']
+    actions = ['mark_confirmed', 'mark_processing', 'mark_shipped', 'mark_delivered', 'mark_cancelled', 'export_orders_csv']
 
     def mark_confirmed(self, request, queryset):
         for order in queryset:
@@ -326,6 +347,38 @@ class OrderAdmin(admin.ModelAdmin):
     mark_cancelled.short_description = 'Mark as Cancelled'
 
 
+    def changelist_view(self, request, extra_context=None):
+        """Inject sales KPIs into the changelist header (see admin/store/order/change_list.html)."""
+        extra_context = extra_context or {}
+        base_qs = Order.objects.all()
+        extra_context['kpi'] = {
+            'orders': base_qs.count(),
+            'paid': base_qs.filter(payment_status='paid').count(),
+            'pending': base_qs.filter(payment_status='pending').count(),
+            'revenue': base_qs.filter(payment_status='paid').aggregate(total=Sum('total'))['total'] or Decimal('0'),
+        }
+        return super().changelist_view(request, extra_context=extra_context)
+
+    def export_orders_csv(self, request, queryset):
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="orders.csv"'
+        writer = csv.writer(response)
+        writer.writerow(['Order Number', 'Status', 'Payment Method', 'Payment Status', 'Subtotal',
+                         'Shipping', 'Tax', 'Total', 'Email', 'Created'])
+        for order in queryset.select_related('user'):
+            writer.writerow([
+                order.order_number,
+                order.get_status_display(),
+                order.get_payment_method_display(),
+                order.get_payment_status_display(),
+                order.subtotal, order.shipping_cost, order.tax_amount, order.total,
+                order.email or '',
+                order.created_at.isoformat(),
+            ])
+        return response
+    export_orders_csv.short_description = 'Export selected orders as CSV'
+
+
 @admin.register(OrderItem)
 class OrderItemAdmin(admin.ModelAdmin):
     list_display = ['order', 'product_name', 'variant_name', 'unit_price', 'quantity', 'total_price']
@@ -356,7 +409,7 @@ class NewsletterSubscriberAdmin(admin.ModelAdmin):
     search_fields = ['email']
     list_editable = ['is_active']
     readonly_fields = ['subscribed_at', 'unsubscribed_at']
-    actions = ['activate_subscribers', 'deactivate_subscribers']
+    actions = ['activate_subscribers', 'deactivate_subscribers', 'export_subscribers_csv']
 
     def activate_subscribers(self, request, queryset):
         queryset.update(is_active=True, unsubscribed_at=None)
@@ -366,6 +419,20 @@ class NewsletterSubscriberAdmin(admin.ModelAdmin):
         from django.utils import timezone
         queryset.update(is_active=False, unsubscribed_at=timezone.now())
     deactivate_subscribers.short_description = 'Deactivate selected subscribers'
+
+
+    def export_subscribers_csv(self, request, queryset):
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="subscribers.csv"'
+        writer = csv.writer(response)
+        writer.writerow(['Email', 'Active', 'Subscribed', 'Unsubscribed', 'Source'])
+        for s in queryset:
+            writer.writerow([s.email, s.is_active,
+                             s.subscribed_at.isoformat() if s.subscribed_at else '',
+                             s.unsubscribed_at.isoformat() if s.unsubscribed_at else '',
+                             s.source])
+        return response
+    export_subscribers_csv.short_description = 'Export selected subscribers as CSV'
 
 
 @admin.register(ContactMessage)

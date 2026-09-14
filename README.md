@@ -31,6 +31,8 @@ bulk downloads are needed.
 - **Category & tag/genre pages**
 - **Product detail** — 16:9 image gallery with HD screenshots, genre chips, Steam-style discount pricing, real release dates, tabs (description, specs, reviews, shipping), related games
 - **Search** — live AJAX suggestions + zero-result live import (searches CheapShark and imports matches instantly)
+- **JSON API** — `/api/search/`, `/api/browse/`, `/api/games/<slug>/`, `/api/genres/`, `/api/contact/`, `/api/health/` (Django REST Framework)
+- **AJAX shop** — filter/sort without page reloads, infinite scroll pagination
 - **Wishlist** — add/remove, move to cart
 - **Reviews & ratings** — star ratings, verified-purchase badges, helpful votes
 - **Responsive design** — dark/light theme toggle, mobile navigation
@@ -74,7 +76,7 @@ bulk downloads are needed.
 - Newsletter subscriptions, contact messages
 - Signals to auto-create wishlists, track order status changes
 - Byte-compiled-ready, environment-variable configuration
-- 36 automated tests
+- 56 automated tests
 
 ---
 
@@ -213,8 +215,11 @@ Key settings can be overridden via environment variables:
 | `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD` | SMTP |
 | `ESEWA_MERCHANT_CODE`, `ESEWA_SECRET_KEY`, `ESEWA_URL` | eSewa |
 | `KHALTI_PUBLIC_KEY`, `KHALTI_SECRET_KEY` | Khalti |
-| `STRIPE_PUBLIC_KEY`, `STRIPE_SECRET_KEY` | Stripe |
-| `PAYPAL_CLIENT_ID`, `PAYPAL_SECRET` | PayPal |
+| `STRIPE_PUBLIC_KEY`, `STRIPE_SECRET_KEY` | Stripe publishes (pk_/sk_ test keys) |
+| `STRIPE_WEBHOOK_SECRET`, `STRIPE_CURRENCY`, `STRIPE_PRICE_LABEL` | Stripe webhook signer + currency (Stripe has no NPR) |
+| `PAYPAL_CLIENT_ID`, `PAYPAL_SECRET` | PayPal REST app credentials |
+| `PAYPAL_WEBHOOK_ID`, `PAYPAL_CURRENCY`, `PAYPAL_PRICE_LABEL`, `PAYPAL_SANDBOX` | PayPal webhook verification + currency/mode |
+| `SITE_BASE_URL` | Absolute base URL used in transactional emails |
 | `USD_TO_NPR` | USD→NPR rate used by importers (default: 135) |
 | `SEED_MAX_REQUESTS` | Max CheapShark requests in the sweep (default: 400) |
 | `SEED_ENRICH` | Top games to Steam-enrich after the sweep (default: 150) |
@@ -230,6 +235,11 @@ reset emails can be viewed in the terminal during development.
 2. Configure `DJANGO_ALLOWED_HOSTS` (PostgreSQL is already the default database).
 3. Configure SMTP email credentials.
 4. Configure real payment gateway credentials (eSewa/Khalti live keys).
-5. Add WhiteNoise (already in `requirements.txt`) or a reverse proxy for static/media.
-6. Run `python manage.py collectstatic`.
-7. Serve behind HTTPS (security settings auto-enable when `DEBUG=False`).
+5. **Stripe webhooks**: `stripe listen --forward-to https://<host>/webhooks/stripe/`,
+   then store the signing secret in `STRIPE_WEBHOOK_SECRET`.
+6. **PayPal webhooks**: verify a `PAYMENT.CAPTURE.COMPLETED` webhook URL in the
+   PayPal dashboard, paste the webhook ID into `PAYPAL_WEBHOOK_ID`, and set
+   `PAYPAL_SANDBOX=False` for live mode.
+7. Add WhiteNoise (already in `requirements.txt`) or a reverse proxy for static/media.
+8. Run `python manage.py collectstatic`.
+9. Serve behind HTTPS (security settings auto-enable when `DEBUG=False`).

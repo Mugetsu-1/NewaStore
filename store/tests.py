@@ -1,17 +1,20 @@
 from decimal import Decimal
+import json
 
 from django.test import TestCase, Client
 from django.contrib.auth.models import User
+from django.core import mail
 from django.urls import reverse
 from django.utils import timezone
 from datetime import timedelta
 
 from .models import (
     Category, Tag, Product, ProductImage, ProductVariant, Review, Coupon,
-    Address, Cart, CartItem, Wishlist, Order, OrderItem, ShippingMethod,
-    NewsletterSubscriber, SiteSettings,
+    Address, Cart, CartItem, Wishlist, Order, OrderItem, OrderStatusHistory,
+    ShippingMethod, NewsletterSubscriber, SiteSettings, ContactMessage,
 )
 from .cart import CartManager
+from .utils import mark_order_paid
 
 
 def make_product(**kwargs):
@@ -317,3 +320,189 @@ class OrderModelTests(TestCase):
             subtotal=Decimal('100'), total=Decimal('100'),
             billing_address={'full_name': 'Guest Person'})
         self.assertEqual(order.customer_name, 'Guest Person')
+
+
+class AuthFlowTests(TestCase):
+    """Register / login (email-or-username) / logout / password reset."""
+
+    def test_register_creates_user_authenticates_and_welcomes(self):
+        response = self.client.post(reverse('register'), {
+            'username': 'newgamer',
+            'first_name': 'New',
+            'last_name': 'Gamer',
+            'email': 'newgamer@example.com',
+            'phone': '',
+            'password1': 'StrongPass!123',
+            'password2': 'StrongPass!123',
+        })
+        self.assertEqual(response.status_code, 302)
+        user = User.objects.get(username='newgamer')
+        self.assertTrue(user.is_authenticated)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('Welcome to Newa Store', mail.outbox[0].subject)
+
+    def test_login_by_username_and_by_email(self):
+        User.objects.create_user('gamer1', email='gamer1@example.com', password='Secret123!')
+        self.assertTrue(self.client.login(username='gamer1', password='Secret123!'))
+        self.client.logout()
+        self.assertTrue(self.client.login(username='gamer1@example.com', password='Secret123!'))
+
+    def test_logout_requires_post(self):
+        User.objects.create_user('logoutuser', password='Secret123!')
+        self.client.login(username='logoutuser', password='Secret123!')
+        self.assertEqual(self.client.get(reverse('logout')).status_code, 405)
+        self.assertEqual(self.client.post(reverse('logout')).status_code, 302)
+
+    def test_password_reset_sends_email(self):
+        User.objects.create_user('resetme', email='resetme@example.com', password='Secret123!')
+        response = self.client.post(reverse('password_reset'), {'email': 'resetme@example.com'})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(len(mail.outbox), 1)
+
+
+class PaymentFulfillmentTests(TestCase):
+    """Stripe / PayPal checkout + webhook fulfillment via mark_order_paid."""
+
+    def _make_order(self, **kw):
+        defaults = dict(
+            subtotal=Decimal('1000'),
+            total=Decimal('1130'),
+            tax_amount=Decimal('130'),
+            guest_email='buyer@example.com',
+            payment_method='stripe',
+        )
+        defaults.update(kw)
+        return Order.objects.create(**defaults)
+
+    def test_mark_order_paid_is_idempotent(self):
+        order = self._make_order()
+        mark_order_paid(order, gateway='stripe', txn_id='pi_test_1')
+        mark_order_paid(order, gateway='stripe', txn_id='pi_test_1')
+        order.refresh_from_db()
+        self.assertEqual(order.payment_status, 'paid')
+        self.assertEqual(order.status, 'confirmed')
+        self.assertIsNotNone(order.confirmed_at)
+        self.assertEqual(order.payment_transaction_id, 'pi_test_1')
+        # single status-history record; status + receipt emails sent once
+        self.assertEqual(OrderStatusHistory.objects.filter(order=order).count(), 1)
+        self.assertEqual(len(mail.outbox), 2)
+
+    def test_stripe_webhook_fulfills_order(self):
+        order = self._make_order()
+        payload = json.dumps({
+            'type': 'payment_intent.succeeded',
+            'data': {'object': {'id': 'pi_wh_1', 'metadata': {'order_number': order.order_number}}},
+        })
+        response = self.client.post(reverse('stripe_webhook'), payload, content_type='application/json')
+        self.assertEqual(response.status_code, 200)
+        order.refresh_from_db()
+        self.assertEqual(order.payment_status, 'paid')
+        self.assertEqual(order.payment_transaction_id, 'pi_wh_1')
+
+    def test_stripe_webhook_rejects_bad_payload(self):
+        response = self.client.post(reverse('stripe_webhook'), 'not-json', content_type='application/json')
+        self.assertEqual(response.status_code, 400)
+
+    def test_paypal_webhook_fulfills_order(self):
+        order = self._make_order(payment_method='paypal')
+        payload = json.dumps({
+            'event_type': 'PAYMENT.CAPTURE.COMPLETED',
+            'resource': {
+                'id': 'CAP-123',
+                'supplementary_data': {'related_ids': {'order_id': order.order_number}},
+            },
+        })
+        response = self.client.post(reverse('paypal_webhook'), payload, content_type='application/json')
+        self.assertEqual(response.status_code, 200)
+        order.refresh_from_db()
+        self.assertEqual(order.payment_status, 'paid')
+        self.assertEqual(order.payment_transaction_id, 'CAP-123')
+
+    def test_stripe_intent_requires_post_and_501_when_unconfigured(self):
+        order = self._make_order()
+        url = reverse('stripe_create_intent', args=[order.order_number])
+        self.assertEqual(self.client.get(url).status_code, 405)
+        response = self.client.post(url)
+        self.assertEqual(response.status_code, 501)
+        self.assertFalse(response.json()['success'])
+
+    def test_stripe_checkout_redirects_when_unconfigured(self):
+        order = self._make_order()
+        response = self.client.get(reverse('stripe_checkout', args=[order.order_number]))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse('payment_failed', args=[order.order_number]), response.url)
+
+    def test_paypal_create_order_501_when_unconfigured(self):
+        order = self._make_order(payment_method='paypal')
+        response = self.client.post(reverse('paypal_create_order', args=[order.order_number]))
+        self.assertEqual(response.status_code, 501)
+        self.assertFalse(response.json()['success'])
+
+    def test_paypal_capture_requires_token(self):
+        order = self._make_order(payment_method='paypal')
+        response = self.client.get(reverse('paypal_capture', args=[order.order_number]))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse('payment_failed', args=[order.order_number]), response.url)
+
+
+class ApiTests(TestCase):
+    """Public JSON API endpoints (/api/...)."""
+
+    def setUp(self):
+        self.product = make_product(name='Cyber Runner 2077')
+        self.tag = Tag.objects.create(name='Action')
+        self.product.tags.add(self.tag)
+
+    def test_health_returns_ok(self):
+        response = self.client.get(reverse('api_health'))
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data['status'], 'ok')
+        self.assertTrue(data['database'])
+
+    def test_search_by_query(self):
+        response = self.client.get(reverse('api_search'), {'q': 'Cyber'})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data['count'], 1)
+        self.assertEqual(data['results'][0]['name'], 'Cyber Runner 2077')
+
+    def test_browse_filters_and_paginates(self):
+        response = self.client.get(reverse('api_browse'), {'on_sale_only': '1', 'sort_by': 'price'})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data['count'], 1)
+        result = data['results'][0]
+        self.assertIn('current_price', result)
+        self.assertIn('discount_percentage', result)
+
+    def test_game_detail(self):
+        response = self.client.get(reverse('api_game_detail', args=[self.product.slug]))
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data['name'], 'Cyber Runner 2077')
+        self.assertEqual(data['genres'], ['Action'])
+
+    def test_genres_with_counts(self):
+        response = self.client.get(reverse('api_genres'))
+        self.assertEqual(response.status_code, 200)
+        genres = response.json()
+        self.assertTrue(genres)
+        self.assertEqual(genres[0]['slug'], 'action')
+        self.assertGreaterEqual(genres[0]['product_count'], 1)
+
+    def test_contact_creates_message_and_emails(self):
+        response = self.client.post(reverse('api_contact'), {
+            'name': 'API Fan',
+            'email': 'fan@example.com',
+            'subject': 'Question',
+            'message': 'Is this store open?',
+        })
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(ContactMessage.objects.filter(email='fan@example.com').exists())
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_contact_rejects_invalid(self):
+        response = self.client.post(reverse('api_contact'), {'email': 'not-an-email'})
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.json()['success'])

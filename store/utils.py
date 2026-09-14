@@ -6,8 +6,14 @@ from io import BytesIO
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import strip_tags
+
+
+def _absolute(path):
+    base = getattr(settings, 'SITE_BASE_URL', 'http://localhost:8000').rstrip('/')
+    return f"{base}{path}"
 
 
 def generate_order_number():
@@ -60,6 +66,62 @@ def send_order_status_update(order):
         context,
         [order.email],
     )
+
+
+def send_payment_receipt(order):
+    """Receipt sent the moment a payment is captured by any gateway."""
+    context = {'order': order, 'order_url': _absolute(reverse('order_detail', args=[order.order_number]))}
+    send_templated_email(
+        f"Payment received — {order.order_number}",
+        'emails/payment_receipt.html',
+        context,
+        [order.email],
+    )
+
+
+def send_welcome_email(user):
+    from .models import Product
+    context = {
+        'user': user,
+        'total_products': Product.objects.filter(is_active=True).count(),
+        'home_url': _absolute(reverse('home')),
+    }
+    send_templated_email(
+        'Welcome to Newa Store!',
+        'emails/welcome.html',
+        context,
+        [user.email],
+    )
+
+
+def mark_order_paid(order, gateway='', txn_id=''):
+    """Idempotent payment fulfillment shared by all gateways.
+
+    Flips payment_status -> paid, status -> confirmed, stamps the
+    transaction id and sends the status + receipt emails. Safe to call
+    more than once (e.g. a client return racing a webhook).
+    """
+    from django.db import transaction
+    from django.utils import timezone
+
+    if order.payment_status == 'paid':
+        return order
+
+    with transaction.atomic():
+        if txn_id:
+            order.payment_transaction_id = txn_id
+        if gateway:
+            order.payment_method = gateway
+        if order.payment_status != 'paid':
+            order.payment_status = 'paid'
+        if order.status != 'confirmed':
+            order.status = 'confirmed'
+            order.confirmed_at = timezone.now()
+        order.save()  # fires the OrderStatusHistory pre_save signal
+        send_order_status_update(order)
+        send_payment_receipt(order)
+    order.refresh_from_db()
+    return order
 
 
 def build_invoice_pdf(order):

@@ -1,0 +1,32 @@
+{% extends "admin/change_list.html" %}
+{% load i18n %}
+
+{% block page_actions %}
+{% if kpi %}
+<style>
+    .kpi-row { display:flex; flex-wrap:wrap; gap:12px; margin:0 0 18px; }
+    .kpi-card { flex:1 1 160px; background:var(--content-bg,#26303c); border:1px solid var(--border-color,#374151); border-radius:10px; padding:14px 18px; }
+    .kpi-label { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:#9ca3af; margin-bottom:6px; }
+    .kpi-value { font-size:1.3rem; font-weight:700; color:var(--primary-light,#f8fafc); }
+    .kpi-value .sub { font-size:.8rem; font-weight:400; color:#9ca3af; margin-left:4px; }
+</style>
+<div class="kpi-row">
+    <div class="kpi-card">
+        <div class="kpi-label"><i class="fas fa-funnel-dollar"></i> Revenue (paid)</div>
+        <div class="kpi-value">{{ kpi.revenue|floatformat:2 }} <span class="sub">{{ currency_symbol|default:"Rs." }}</span></div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label"><i class="fas fa-shopping-bag"></i> Total orders</div>
+        <div class="kpi-value">{{ kpi.orders }}</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label"><i class="fas fa-check-circle"></i> Paid orders</div>
+        <div class="kpi-value">{{ kpi.paid }}</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label"><i class="fas fa-hourglass-half"></i> Pending payment</div>
+        <div class="kpi-value">{{ kpi.pending }}</div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

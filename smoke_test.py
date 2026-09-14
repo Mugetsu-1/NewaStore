@@ -26,6 +26,14 @@ urls = [
 if order:
     urls += [f'/order/success/{order.order_number}/', f'/orders/{order.order_number}/track/']
 
+# Phase-1/3 additions: API + payment pages
+urls += ['/api/health/', '/api/search/?q=game', '/api/browse/', '/api/genres/']
+if product:
+    urls += [f'/api/games/{product.slug}/']
+if order:
+    urls += [f'/payment/stripe/{order.order_number}/', f'/payment/paypal/{order.order_number}/']
+urls += ['/webhooks/stripe/', '/webhooks/paypal/', f'/payment/stripe/FAKE/intent/']
+
 authed = ['/profile/', '/profile/edit/', '/profile/password/', '/reviews/',
           '/addresses/', '/addresses/add/', '/wishlist/', '/orders/']
 if order:
@@ -48,6 +56,13 @@ if user:
         except Exception as e:
             results.append(('ERR', f'{u} -> {type(e).__name__}: {e}'))
 
+# AJAX grid fragment (the infinite-scroll / filter endpoint over /shop/)
+try:
+    r = c.get('/shop/', HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+    results.append((200 if r.status_code == 200 and b'product-grid' in r.content else r.status_code, '/shop/ (AJAX fragment)'))
+except Exception as e:
+    results.append(('ERR', f'/shop/ (AJAX) -> {type(e).__name__}: {e}'))
+
 # Admin
 admin = User.objects.filter(is_superuser=True).first()
 if admin:
@@ -61,7 +76,8 @@ if admin:
 print('\n--- SMOKE RESULTS ---')
 bad = 0
 for status, u in results:
-    flag = 'OK ' if status in (200, 301, 302) else 'BAD'
+    # 405 is expected for POST-only routes (webhooks, create-intent)
+    flag = 'OK ' if status in (200, 301, 302, 405) else 'BAD'
     if flag == 'BAD':
         bad += 1
     print(f'[{flag}] {status}  {u}')

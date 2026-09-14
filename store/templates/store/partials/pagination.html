@@ -18,7 +18,7 @@
     {% endfor %}
 
     {% if page_obj.has_next %}
-        <a href="{% query_replace page=page_obj.next_page_number %}"><i class="fas fa-chevron-right"></i></a>
+        <a href="{% query_replace page=page_obj.next_page_number %}" class="page-next"><i class="fas fa-chevron-right"></i></a>
         <a href="{% query_replace page=page_obj.paginator.num_pages %}"><i class="fas fa-angles-right"></i></a>
     {% else %}
         <span class="disabled"><i class="fas fa-chevron-right"></i></span>
