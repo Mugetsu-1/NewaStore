@@ -21,7 +21,7 @@
             <div class="pd-main-img">
                 {% with img=images.first %}
                     {% if img and img.src_url %}
-                        <img id="pd-main-img" src="{{ img.src_url }}" alt="{{ img.alt_text|default:product.name }}">
+                        <img id="pd-main-img" src="{{ img.src_url }}" alt="{{ img.alt_text|default:product.name }}"> onerror="this.onerror=null;this.src='{% static 'images/placeholder.svg' %}'"
                     {% else %}
                         <img id="pd-main-img" src="{% static 'images/placeholder.svg' %}" alt="{{ product.name }}">
                     {% endif %}
@@ -31,7 +31,7 @@
             <div class="pd-thumbs">
                 {% for img in images %}
                 <div class="pd-thumb {% if forloop.first %}active{% endif %}" data-src="{{ img.src_url }}">
-                    <img src="{{ img.src_url }}" alt="{{ img.alt_text|default:product.name }}">
+                    <img src="{{ img.src_url }}" alt="{{ img.alt_text|default:product.name }}"> onerror="this.onerror=null;this.src='{% static 'images/placeholder.svg' %}'"
                 </div>
                 {% endfor %}
             </div>

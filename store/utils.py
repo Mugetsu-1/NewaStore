@@ -1,7 +1,10 @@
+import logging
 import os
 import uuid
 from decimal import Decimal
 from io import BytesIO
+
+logger = logging.getLogger(__name__)
 
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
@@ -43,9 +46,11 @@ def send_templated_email(subject, template_name, context, to_emails, from_email=
     msg = EmailMultiAlternatives(subject, text_content, from_email, to_emails)
     msg.attach_alternative(html_content, "text/html")
     try:
-        msg.send(fail_silently=True)
+        msg.send(fail_silently=False)
     except Exception:
-        pass
+        # Never break the storefront on SMTP hiccups, but DO make failures
+        # visible (bad app password, rate limit, ...) in logs/terminal.
+        logger.exception('Email send failed (subject=%r, to=%s)', subject, to_emails)
 
 
 def send_order_confirmation(order):
