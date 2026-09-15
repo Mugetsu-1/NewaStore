@@ -161,7 +161,8 @@ class ProductImage(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='images')
     image = models.ImageField(upload_to='products/', blank=True,
                               help_text="Local file (downloaded). Optional when external_url is set.")
-    external_url = models.URLField(blank=True, help_text="Hotlinked image (e.g. Steam CDN capsule art)")
+    external_url = models.URLField(max_length=500, blank=True,
+                                   help_text="Hotlinked image (e.g. Steam CDN capsule art)")
     alt_text = models.CharField(max_length=200, blank=True)
     is_primary = models.BooleanField(default=False)
     sort_order = models.IntegerField(default=0)
