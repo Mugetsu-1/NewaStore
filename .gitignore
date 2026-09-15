@@ -38,6 +38,7 @@ Thumbs.db
 # Local import and generated-data markers
 .steamspy_progress
 steamspy_progress*
+.bootstrap_state.json
 
 # Build and packaging output
 build/

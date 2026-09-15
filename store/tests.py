@@ -1,5 +1,7 @@
 from decimal import Decimal
+import io
 import json
+from io import StringIO
 
 from django.test import TestCase, Client
 from django.contrib.auth.models import User
@@ -491,6 +493,88 @@ class PaymentFulfillmentTests(TestCase):
         response = self.client.post(reverse('checkout'), payload)
         self.assertNotEqual(response.status_code, 302)
         self.assertEqual(Order.objects.count(), 0)
+
+
+class BootstrapTests(TestCase):
+    """ensure_ready must be safe, incremental and network-free when idle."""
+
+    def test_ensure_ready_with_all_steps_skipped_completes(self):
+        from django.core.management import call_command
+        from django.conf import settings
+        from pathlib import Path
+
+        state_file = Path(settings.BASE_DIR) / ".bootstrap_state.json"
+        if state_file.exists():
+            state_file.unlink()
+
+        out = StringIO()
+        # Everything skipped: no migrations, no import, no repair, no audit.
+        call_command("ensure_ready", skip_migrate=True, skip_import=True,
+                     skip_repair=True, skip_audit=True, stdout=out)
+        text = out.getvalue()
+        self.assertIn("Bootstrap finished", text)
+        self.assertNotIn("Repairing artwork", text)
+        self.assertNotIn("importing the full SteamSpy catalog", text)
+
+    def test_ensure_ready_skips_repair_when_cadence_blocks_it(self):
+        """A recent attempt with an unchanged placeholder count is not retried."""
+        import json as jsonlib
+        from django.core.management import call_command
+        from django.conf import settings
+        from django.utils import timezone
+        from pathlib import Path
+
+        state_file = Path(settings.BASE_DIR) / ".bootstrap_state.json"
+        state = {
+            "audit_after_id": 0,
+            "audit_completed_at": timezone.now().isoformat(),
+            "repair_last_at": timezone.now().isoformat(),
+            "repair_last_count": 0,
+            "import_last_at": timezone.now().isoformat(),
+        }
+        state_file.write_text(jsonlib.dumps(state), encoding="utf-8")
+        try:
+            out = StringIO()
+            call_command("ensure_ready", skip_migrate=True, skip_import=True,
+                         skip_audit=True, stdout=out)
+            self.assertIn("Artwork repair: nothing to do", out.getvalue())
+        finally:
+            if state_file.exists():
+                state_file.unlink()
+
+    def test_ensure_ready_ignores_corrupt_state_file(self):
+        from django.core.management import call_command
+        from django.conf import settings
+        from pathlib import Path
+
+        state_file = Path(settings.BASE_DIR) / ".bootstrap_state.json"
+        state_file.write_text("{not valid json", encoding="utf-8")
+        try:
+            out = StringIO()
+            call_command("ensure_ready", skip_migrate=True, skip_import=True,
+                         skip_repair=True, skip_audit=True, stdout=out)
+            self.assertIn("Bootstrap finished", out.getvalue())
+        finally:
+            if state_file.exists():
+                state_file.unlink()
+
+    def test_runserver_command_exposes_bootstrap_flags(self):
+        from django.core.management import get_commands, load_command_class
+        app = get_commands()["runserver"]
+        self.assertEqual(app, "store")  # our override wins over staticfiles
+        cmd = load_command_class(app, "runserver")
+        from store.management.commands.runserver import Command as RSCommand
+        self.assertIsInstance(cmd, RSCommand)
+        import argparse
+        parser = argparse.ArgumentParser()
+        cmd.add_arguments(parser)
+        flags = {a.option_strings[0] for a in parser._actions if a.option_strings}
+        self.assertIn("--skip-bootstrap", flags)
+        self.assertIn("--force-bootstrap", flags)
+        self.assertIn("--bootstrap-workers", flags)
+        # and it still supports the vanilla flags
+        self.assertIn("--noreload", flags)
+        self.assertIn("--nostatic", flags)
 
 
 class ApiTests(TestCase):

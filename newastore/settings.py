@@ -14,9 +14,13 @@ ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', '*').split(',')
 # Absolute base URL used in emails (order links, welcome CTA, …)
 SITE_BASE_URL = os.environ.get('SITE_BASE_URL', 'http://localhost:8000')
 
-# Jazzmin MUST be placed above django.contrib.admin
+# Jazzmin MUST be placed above django.contrib.admin.
+# 'store' must sit above 'django.contrib.staticfiles': command discovery gives
+# precedence to earlier apps, which lets our runserver override ship the
+# self-healing bootstrap.
 INSTALLED_APPS = [
     'jazzmin',
+    'store',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -25,7 +29,6 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'django.contrib.sitemaps',
     'django.contrib.humanize',
-    'store',
     'rest_framework',
 ]
 
