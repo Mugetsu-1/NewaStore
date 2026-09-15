@@ -25,6 +25,7 @@ urlpatterns = [
 
     # Checkout & payments
     path('checkout/', views.checkout, name='checkout'),
+    path('payment/simulate/<str:order_number>/<str:gateway>/', views.simulate_payment, name='simulate_payment'),
     path('esewa-verify/', views.esewa_verify, name='esewa_verify'),
     path('khalti-verify/', views.khalti_verify, name='khalti_verify'),
     path('payment/stripe/<str:order_number>/', views.stripe_checkout, name='stripe_checkout'),

@@ -554,3 +554,156 @@ class ApiTests(TestCase):
         response = self.client.post(reverse('api_contact'), {'email': 'not-an-email'})
         self.assertEqual(response.status_code, 400)
         self.assertFalse(response.json()['success'])
+class SimulatedGatewayTests(TestCase):
+    """eSewa/Khalti are demo wallets (local simulation); Nay Bank is offline.
+
+    Nothing may contact an external provider: checkout has to render a local
+    page, and only the local "simulate" endpoint may flip an order to paid.
+    """
+
+    def setUp(self):
+        SiteSettings.get_settings()
+        self.shipping = ShippingMethod.objects.create(
+            name='Standard', price=Decimal('100'), estimated_days_min=3,
+            estimated_days_max=5, is_active=True)
+        self.product = make_product(stock_quantity=10)
+        self.user = User.objects.create_user(
+            'sim_buyer', password='pass12345', email='sim@example.com')
+
+    def _start_checkout(self, payment_method):
+        """Add a product, then place the order paying with `payment_method`."""
+        self.client.login(username='sim_buyer', password='pass12345')
+        self.client.post(reverse('add_to_cart', args=[self.product.id]), {'quantity': 1})
+        payload = {
+            'billing_full_name': 'Sim Buyer', 'billing_phone': '9800000000',
+            'billing_email': 'sim@example.com', 'billing_address_line_1': 'Main St',
+            'billing_address_line_2': '', 'billing_city': 'Kathmandu',
+            'billing_state': 'Bagmati', 'billing_postal_code': '44600',
+            'billing_country': 'Nepal',
+            'shipping_option': 'same',
+            'shipping_method': self.shipping.id,
+            'payment_method': payment_method,
+            'order_notes': '', 'terms_accepted': 'on',
+        }
+        return self.client.post(reverse('checkout'), payload)
+
+    # ---------------------------------------------------------- checkout UI
+
+    def test_checkout_offers_simulated_wallets_and_nay_bank(self):
+        self.client.login(username='sim_buyer', password='pass12345')
+        self.client.post(reverse('add_to_cart', args=[self.product.id]), {'quantity': 1})
+        html = self.client.get(reverse('checkout')).content.decode()
+        self.assertIn('value="esewa"', html)
+        self.assertIn('value="khalti"', html)
+        self.assertIn('value="nay_bank"', html)
+        self.assertIn('eSewa (Simulated)', html)
+        self.assertIn('Khalti (Simulated)', html)
+        self.assertIn('Nay Bank Transfer', html)
+
+# ------------------------------------------------- eSewa / Khalti (demo)
+
+    def test_esewa_checkout_renders_local_page_instead_of_redirect(self):
+        response = self._start_checkout('esewa')
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode()
+        self.assertIn('Simulated payment', html)
+        self.assertIn('eSewa', html)
+        # no external gateway may be contacted
+        self.assertNotIn('esewa.com.np', html)
+        order = Order.objects.get()
+        self.assertEqual(order.payment_method, 'esewa')
+        self.assertEqual(order.payment_status, 'pending')
+        self.assertFalse(order.is_paid)
+
+    def test_khalti_checkout_renders_local_page_instead_of_redirect(self):
+        response = self._start_checkout('khalti')
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode()
+        self.assertIn('Simulated payment', html)
+        self.assertIn('Khalti', html)
+        self.assertNotIn('khalti.com', html)
+        order = Order.objects.get()
+        self.assertEqual(order.payment_method, 'khalti')
+        self.assertFalse(order.is_paid)
+
+    def test_simulated_success_marks_order_paid(self):
+        self._start_checkout('esewa')
+        order = Order.objects.get()
+        response = self.client.post(
+            reverse('simulate_payment', args=[order.order_number, 'esewa']),
+            {'outcome': 'success'})
+        self.assertRedirects(
+            response, reverse('order_success', args=[order.order_number]),
+            fetch_redirect_response=False)
+        order.refresh_from_db()
+        self.assertEqual(order.payment_status, 'paid')
+        self.assertEqual(order.status, 'confirmed')
+        self.assertTrue(order.is_paid)
+        self.assertTrue(order.payment_transaction_id.startswith('SIM-'))
+        self.assertIsNotNone(order.confirmed_at)
+
+    def test_simulated_failure_marks_order_failed(self):
+        self._start_checkout('khalti')
+        order = Order.objects.get()
+        response = self.client.post(
+            reverse('simulate_payment', args=[order.order_number, 'khalti']),
+            {'outcome': 'failure'})
+        self.assertRedirects(
+            response, reverse('payment_failed', args=[order.order_number]),
+            fetch_redirect_response=False)
+        order.refresh_from_db()
+        self.assertEqual(order.payment_status, 'failed')
+        self.assertFalse(order.is_paid)
+
+    def test_simulation_is_idempotent_on_already_paid_order(self):
+        """A late 'declined' click must not un-pay a settled order."""
+        self._start_checkout('esewa')
+        order = Order.objects.get()
+        url = reverse('simulate_payment', args=[order.order_number, 'esewa'])
+        self.client.post(url, {'outcome': 'success'})
+        self.client.post(url, {'outcome': 'failure'})
+        order.refresh_from_db()
+        self.assertEqual(order.payment_status, 'paid')
+
+    def test_simulate_payment_404s_for_unknown_gateway(self):
+        order = Order.objects.create(subtotal=Decimal('100'), total=Decimal('100'))
+        response = self.client.get(
+            reverse('simulate_payment', args=[order.order_number, 'stripe']))
+        self.assertEqual(response.status_code, 404)
+
+    def test_simulated_gateway_page_references_no_external_hosts(self):
+        """Belt and braces: the demo page must not point at any gateway host."""
+        self._start_checkout('esewa')
+        order = Order.objects.get()
+        html = self.client.get(
+            reverse('simulate_payment', args=[order.order_number, 'esewa'])).content.decode()
+        for host in ('esewa.com.np', 'khalti.com', 'js.stripe.com', 'paypal.com'):
+            self.assertNotIn(host, html)
+
+    # ------------------------------------------------------ Nay Bank transfer
+
+    def test_nay_bank_order_stays_pending_and_shows_account_details(self):
+        response = self._start_checkout('nay_bank')
+        order = Order.objects.get()
+        self.assertRedirects(
+            response, reverse('order_success', args=[order.order_number]),
+            fetch_redirect_response=False)
+        self.assertEqual(order.payment_method, 'nay_bank')
+        self.assertEqual(order.payment_status, 'pending')
+        self.assertEqual(order.status, 'pending')
+
+        page = self.client.get(reverse('order_success', args=[order.order_number]))
+        html = page.content.decode()
+        self.assertIn('Nay Bank', html)
+        self.assertIn('Complete your bank transfer', html)
+        self.assertIn('0123456789012', html)  # demo account number
+        self.assertIn(order.order_number, html)
+
+    def test_nay_bank_details_only_render_for_bank_orders(self):
+        """A COD order must not display bank transfer instructions."""
+        self._start_checkout('cod')
+        order = Order.objects.get()
+        html = self.client.get(
+            reverse('order_success', args=[order.order_number])).content.decode()
+        self.assertNotIn('Complete your bank transfer', html)
+        self.assertNotIn('0123456789012', html)

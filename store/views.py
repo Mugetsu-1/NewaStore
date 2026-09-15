@@ -1,5 +1,3 @@
-import hmac
-import hashlib
 import base64
 import json
 import uuid
@@ -25,6 +23,7 @@ from django.db.models import Prefetch
 from .payments import (
     is_stripe_configured, create_stripe_payment_intent, retrieve_stripe_payment_intent,
     is_paypal_configured, create_paypal_order, capture_paypal_order, PayPalError,
+    get_simulated_gateway, is_simulated_gateway, BANK_TRANSFER_DETAILS,
 )
 from .models import (
     Product, Category, Tag, ProductVariant, ProductImage, Review,
@@ -45,10 +44,6 @@ from .utils import (
 )
 
 User = get_user_model()
-
-ESEWA_MERCHANT_CODE = getattr(settings, 'ESEWA_MERCHANT_CODE', 'EPAYTEST')
-ESEWA_SECRET_KEY = getattr(settings, 'ESEWA_SECRET_KEY', '8gBm/:&EnhH.1/q')
-ESEWA_URL = getattr(settings, 'ESEWA_URL', 'https://rc-epay.esewa.com.np/api/epay/main/v2/form')
 
 
 # ============================================================
@@ -554,21 +549,30 @@ def _create_order_and_pay(request, form, manager):
     send_order_confirmation(order)
 
     payment_method = data['payment_method']
-    if payment_method == 'esewa':
-        return _initiate_esewa(request, order)
-    elif payment_method == 'khalti':
-        return _initiate_khalti(request, order)
+    if is_simulated_gateway(payment_method):
+        # eSewa / Khalti are demo wallets: render a local, self-contained
+        # payment screen instead of redirecting to the real gateway.
+        return _initiate_simulated_gateway(request, order, payment_method)
     elif payment_method == 'cod':
         order.status = 'confirmed'
         order.confirmed_at = timezone.now()
         order.save()
+        return redirect('order_success', order_number=order.order_number)
+    elif payment_method == 'nay_bank':
+        # Offline settlement: keep the order pending until an admin verifies
+        # the deposit. Bank details are shown on the order success page.
+        messages.info(
+            request,
+            'Order placed. Complete the bank transfer using the details below so '
+            'we can confirm your order.',
+        )
         return redirect('order_success', order_number=order.order_number)
     elif payment_method == 'stripe':
         return redirect('stripe_checkout', order_number=order.order_number)
     elif payment_method == 'paypal':
         return redirect('paypal_checkout', order_number=order.order_number)
     else:
-        # bank_transfer and any future gateways keep the pending page
+        # Any other gateway keeps the pending page
         return redirect('order_success', order_number=order.order_number)
 
 
@@ -584,35 +588,63 @@ def _save_addresses(user, billing, shipping):
             )
 
 
-def _initiate_esewa(request, order):
-    amount = int(order.total)
-    transaction_uuid = order.order_number
-    message = f"total_amount={amount},transaction_uuid={transaction_uuid},product_code={ESEWA_MERCHANT_CODE}"
-    hmac_sha256 = hmac.new(ESEWA_SECRET_KEY.encode('utf-8'), message.encode('utf-8'), hashlib.sha256)
-    signature = base64.b64encode(hmac_sha256.digest()).decode('utf-8')
+def _initiate_simulated_gateway(request, order, gateway):
+    """Render the in-app stand-in for eSewa / Khalti.
 
-    context = {
+    No external request is made and no real money moves: the shopper sees a
+    page laid out like the wallet's payment screen and chooses to confirm or
+    decline a simulated transaction.
+    """
+    meta = get_simulated_gateway(gateway)
+    if meta is None:
+        raise Http404('Unknown payment gateway.')
+    return render(request, 'store/simulated_gateway.html', {
         'order': order,
-        'amount': amount,
-        'signature': signature,
-        'merchant_code': ESEWA_MERCHANT_CODE,
-        'esewa_url': ESEWA_URL,
-        'transaction_uuid': transaction_uuid,
-        'success_url': request.build_absolute_uri(reverse('esewa_verify')),
-        'failure_url': request.build_absolute_uri(reverse('payment_failed', args=[order.order_number])),
-    }
-    return render(request, 'store/esewa_form.html', context)
+        'gateway': gateway,
+        'meta': meta,
+        'amount': order.total,
+        'page_title': f'Pay with {meta["brand"]}',
+    })
 
 
-def _initiate_khalti(request, order):
-    khalti_public_key = getattr(settings, 'KHALTI_PUBLIC_KEY', '')
-    context = {
+@require_http_methods(['GET', 'POST'])
+def simulate_payment(request, order_number, gateway):
+    """Handle the demo wallet screen: confirm (paid) or decline (failed)."""
+    order = get_object_or_404(Order, order_number=order_number)
+    meta = get_simulated_gateway(gateway)
+    if meta is None:
+        raise Http404('Unknown payment gateway.')
+
+    if request.method == 'POST':
+        outcome = request.POST.get('outcome', 'success')
+        if outcome == 'success':
+            txn_id = f'SIM-{uuid.uuid4().hex[:12].upper()}'
+            mark_order_paid(order, gateway=gateway, txn_id=txn_id)
+            messages.success(
+                request,
+                f'{meta["brand"]} payment confirmed (simulated) — '
+                f'transaction {txn_id}.',
+            )
+            return redirect('order_success', order_number=order.order_number)
+
+        if order.payment_status != 'paid':
+            order.payment_status = 'failed'
+            order.save(update_fields=['payment_status'])
+        messages.error(
+            request,
+            f'{meta["brand"]} payment was declined (simulated). '
+            'You can try again with another method.',
+        )
+        return redirect('payment_failed', order_number=order.order_number)
+
+    return render(request, 'store/simulated_gateway.html', {
         'order': order,
-        'khalti_public_key': khalti_public_key,
-        'amount_paisa': int(order.total * 100),
-        'return_url': request.build_absolute_uri(reverse('khalti_verify')),
-    }
-    return render(request, 'store/khalti_form.html', context)
+        'gateway': gateway,
+        'meta': meta,
+        'amount': order.total,
+        'page_title': f'Pay with {meta["brand"]}',
+    })
+
 
 
 # ============================================================
@@ -877,7 +909,14 @@ def order_success(request, order_number):
     order = get_object_or_404(Order, order_number=order_number)
     if request.user.is_authenticated and order.user and order.user != request.user:
         raise Http404
-    return render(request, 'store/order_success.html', {'order': order, 'page_title': 'Order Confirmed'})
+    return render(request, 'store/order_success.html', {
+        'order': order,
+        'page_title': 'Order Confirmed',
+        # Nay Bank Transfer orders stay pending until an admin verifies the
+        # deposit, so surface the account details on this page.
+        'bank_details': BANK_TRANSFER_DETAILS if order.payment_method == 'nay_bank' else None,
+        'is_simulated': is_simulated_gateway(order.payment_method),
+    })
 
 
 @login_required

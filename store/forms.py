@@ -287,12 +287,12 @@ class CheckoutForm(forms.Form):
     
     # Payment Method
     PAYMENT_CHOICES = [
-        ('esewa', 'eSewa'),
-        ('khalti', 'Khalti'),
+        ('esewa', 'eSewa (Simulated)'),
+        ('khalti', 'Khalti (Simulated)'),
+        ('nay_bank', 'Nay Bank Transfer'),
+        ('cod', 'Cash on Delivery'),
         ('stripe', 'Credit/Debit Card (Stripe)'),
         ('paypal', 'PayPal'),
-        ('cod', 'Cash on Delivery'),
-        ('bank_transfer', 'Bank Transfer'),
     ]
     payment_method = forms.ChoiceField(choices=PAYMENT_CHOICES, widget=forms.RadioSelect, initial='cod')
 

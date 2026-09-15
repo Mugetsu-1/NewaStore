@@ -180,8 +180,15 @@
   function updateCartCount(count) {
     if (count === undefined) return;
     $$('[data-cart-count]').forEach((el) => {
+      const previous = parseInt(el.textContent, 10);
       el.textContent = count;
       el.style.display = count > 0 ? 'flex' : 'none';
+      // Pop the badge only when the number actually moves.
+      if (!isNaN(previous) && previous !== count) {
+        el.classList.remove('pop');
+        void el.offsetWidth; // restart the animation
+        el.classList.add('pop');
+      }
     });
   }
 
@@ -207,8 +214,11 @@
     }
     const el = document.createElement('div');
     el.className = 'alert alert-' + (type || 'info');
-    const icon = type === 'error' ? 'fa-circle-exclamation' : 'fa-circle-check';
-    el.innerHTML = `<i class="fas ${icon}"></i><span>${message}</span>`;
+    const icons = {
+      error: 'fa-circle-exclamation', success: 'fa-circle-check',
+      warning: 'fa-triangle-exclamation', info: 'fa-circle-info',
+    };
+    el.innerHTML = `<i class="fas ${icons[type] || 'fa-circle-info'}"></i><span>${message}</span>`;
     wrap.appendChild(el);
     setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 3500);
   }
@@ -359,20 +369,34 @@
     return '/shop/?' + params.toString();
   }
 
+  const SKELETON_CARDS = 8;
+
+  function showShopSkeleton() {
+    if (!shopResults) return;
+    const cards = Array.from({ length: SKELETON_CARDS }).map(() =>
+      '<div class="skeleton-card">' +
+        '<div class="sk-media sk-shimmer"></div>' +
+        '<div class="sk-line sk-shimmer"></div>' +
+        '<div class="sk-line short sk-shimmer"></div>' +
+      '</div>').join('');
+    shopResults.innerHTML = '<div class="skeleton-grid">' + cards + '</div>';
+  }
+
   async function loadShop(url) {
     if (!shopResults) return;
-    shopResults.style.opacity = '0.45';
+    const token = ++shopLoadToken;
+    // Shimmer placeholders make the swap feel instant instead of frozen.
+    showShopSkeleton();
     try {
       const res = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
       const html = await res.text();
+      if (token !== shopLoadToken) return; // a newer request superseded this one
       shopResults.innerHTML = html;
       syncShopMeta();
-      history.pushState({}, '', url);
+      history.pushState({ shop: true }, '', url);
       window.scrollTo({ top: shopResults.offsetTop - 140, behavior: 'smooth' });
     } catch (err) {
       showToast('Could not load results.', 'error');
-    } finally {
-      shopResults.style.opacity = '1';
     }
   }
 
@@ -381,19 +405,35 @@
     const counter = $('#result-count');
     if (grid && counter) {
       const total = grid.dataset.total || '0';
-      counter.innerHTML = total + ' ' + (total === '1' ? 'game' : 'games') + ' found';
+      counter.textContent = total + ' ' + (total === '1' ? 'game' : 'games') + ' found';
+      counter.classList.remove('pulse');
+      void counter.offsetWidth;
+      counter.classList.add('pulse');
     }
     startInfiniteScroll();
   }
 
+  let shopLoadToken = 0;
+  let lastShopUrl = filterForm ? shopStateUrl() : location.href;
+
   if (filterForm && shopResults) {
-    filterForm.addEventListener('submit', (e) => { e.preventDefault(); loadShop(shopStateUrl()); });
+    filterForm.addEventListener('submit', (e) => { e.preventDefault(); lastShopUrl = shopStateUrl(); loadShop(lastShopUrl); });
   }
   if (sortForm && shopResults) {
     sortForm.addEventListener('change', (e) => {
-      if (e.target.name === 'sort_by') loadShop(shopStateUrl());
+      if (e.target.name === 'sort_by') { lastShopUrl = shopStateUrl(); loadShop(lastShopUrl); }
     });
   }
+
+  // Back/forward buttons re-fetch the right result set.
+  window.addEventListener('popstate', () => {
+    if (!shopResults) return;
+    const params = new URLSearchParams(location.search);
+    if (location.pathname === '/shop/' && (params.toString() || lastShopUrl.includes('/shop/'))) {
+      lastShopUrl = location.href;
+      loadShop(location.href);
+    }
+  });
 
   function startInfiniteScroll() {
     if (!shopResults) return;
@@ -432,4 +472,59 @@
     infiniteObserver.observe(sentinel);
   }
   startInfiniteScroll();
+// ---------- Header shrink on scroll ----------
+  const headerEl = $('.header');
+  if (headerEl) {
+    let ticking = false;
+    const onScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(() => {
+        headerEl.classList.toggle('shrunk', window.scrollY > 40);
+        ticking = false;
+      });
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+  }
+
+  // ---------- Submit buttons get a spinner so clicks always feel handled ----
+  // AJAX forms are skipped: their buttons must stay usable after the swap.
+  const AJAX_FORMS = ['#filter-form', '#sort-form', 'form[data-newsletter]', '#coupon-form'];
+  document.addEventListener('submit', (e) => {
+    const form = e.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    if (form.dataset.noBusy !== undefined) return;
+    if (AJAX_FORMS.some((sel) => form.matches(sel))) return;
+    const btn = form.querySelector('button[type="submit"], input[type="submit"]');
+    if (btn) btn.classList.add('is-busy');
+  });
+
+  // Checkout: narrate the redirect so the page never appears frozen.
+  const checkoutForm = $('#checkout-form');
+  if (checkoutForm) {
+    checkoutForm.addEventListener('submit', () => {
+      const method = checkoutForm.querySelector('input[name="payment_method"]:checked');
+      const labels = {
+        esewa: 'Opening the eSewa payment screen…',
+        khalti: 'Opening the Khalti payment screen…',
+        nay_bank: 'Placing order — bank details next…',
+        cod: 'Placing your order…',
+        stripe: 'Redirecting to card payment…',
+        paypal: 'Redirecting to PayPal…',
+      };
+      const text = (method && labels[method.value]) || 'Placing your order…';
+      showToast(text, 'info');
+    });
+  }
+
+  // ---------- Wishlist / cart buttons: brief press feedback ----------
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-wishlist-toggle], .btn-add-cart, [data-add-to-cart]');
+    if (!btn) return;
+    btn.classList.remove('is-pressed');
+    void btn.offsetWidth;
+    btn.classList.add('is-pressed');
+    window.setTimeout(() => btn.classList.remove('is-pressed'), 400);
+  });
 })();

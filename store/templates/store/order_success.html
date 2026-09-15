@@ -54,6 +54,44 @@
             </div>
         </div>
 
+        {% if bank_details %}
+        <div class="checkout-section" style="text-align:left;border-left:4px solid #f59e0b">
+            <h3 style="font-size:1.05rem;margin-bottom:6px">
+                <i class="fas fa-building-columns"></i> Complete your bank transfer
+            </h3>
+            <p class="text-muted" style="font-size:.85rem;margin-bottom:14px">{{ bank_details.instructions }}</p>
+
+            <div class="table-wrap">
+                <table class="data">
+                    <tbody>
+                        <tr><th style="width:42%">Bank</th><td><strong>{{ bank_details.bank_name }}</strong></td></tr>
+                        <tr><th>Account name</th><td>{{ bank_details.account_name }}</td></tr>
+                        <tr><th>Account number</th><td><strong style="letter-spacing:.5px">{{ bank_details.account_number }}</strong></td></tr>
+                        <tr><th>Branch</th><td>{{ bank_details.branch }}</td></tr>
+                        <tr><th>SWIFT</th><td>{{ bank_details.swift }}</td></tr>
+                        <tr><th>Amount</th><td><strong>{{ currency_symbol }} {{ order.total|floatformat:2 }}</strong></td></tr>
+                        <tr><th>Reference</th><td><strong>{{ order.order_number }}</strong></td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <p class="text-muted mt-2" style="font-size:.8rem">
+                <i class="fas fa-circle-info"></i>
+                Your order shows <strong>pending</strong> until our team verifies the deposit.
+            </p>
+        </div>
+        {% endif %}
+
+        {% if is_simulated and not order.is_paid %}
+        <div class="checkout-section" style="text-align:left;border-left:4px solid #f59e0b">
+            <p class="text-muted" style="font-size:.85rem;margin:0">
+                <i class="fas fa-rotate-right"></i>
+                Payment was not completed.
+                <a href="{% url 'simulate_payment' order.order_number order.payment_method %}" style="color:var(--primary)">Retry the simulated payment</a>.
+            </p>
+        </div>
+        {% endif %}
+
         <div class="flex-center gap-2 mt-4" style="flex-wrap:wrap">
             {% if user.is_authenticated %}
             <a href="{% url 'order_detail' order.order_number %}" class="btn btn-primary"><i class="fas fa-box"></i> View Order</a>

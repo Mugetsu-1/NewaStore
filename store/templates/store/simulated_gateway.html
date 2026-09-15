@@ -1,0 +1,87 @@
+{% extends 'base.html' %}
+{% load static store_extras %}
+
+{% block content %}
+<div class="container section" style="max-width:520px">
+
+    <div class="checkout-section" style="padding:0;overflow:hidden">
+
+        <!-- Wallet header (brand-coloured, mimics the real app) -->
+        <div style="background:{{ meta.color }};padding:22px 24px;display:flex;align-items:center;gap:14px">
+            <div style="width:48px;height:48px;border-radius:12px;background:rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center">
+                <i class="fas {{ meta.icon }}" style="font-size:1.4rem;color:#fff"></i>
+            </div>
+            <div style="flex:1;color:#fff">
+                <div style="font-weight:800;font-size:1.15rem;letter-spacing:.2px">{{ meta.brand }}</div>
+                <div style="font-size:.78rem;opacity:.9">{{ meta.tagline }}</div>
+            </div>
+            <i class="fas fa-lock" style="color:rgba(255,255,255,.75)"></i>
+        </div>
+
+        <!-- Demo notice -->
+        <div style="background:rgba(245,158,11,.12);border-bottom:1px solid rgba(245,158,11,.3);padding:12px 24px;display:flex;gap:10px;align-items:flex-start">
+            <i class="fas fa-triangle-exclamation" style="color:#f59e0b;margin-top:2px"></i>
+            <div style="font-size:.82rem;line-height:1.45">
+                <strong>Simulated payment — demo mode.</strong>
+                This store is a portfolio project. No real {{ meta.brand }} transaction is
+                created and <strong>no money is charged</strong>. Use the buttons below to
+                simulate an approved or declined payment.
+            </div>
+        </div>
+
+        <form method="post" action="{% url 'simulate_payment' order.order_number gateway %}" style="padding:24px">
+            {% csrf_token %}
+
+            <!-- Amount -->
+            <div style="text-align:center;padding:16px 0 20px">
+                <div class="text-muted" style="font-size:.8rem;text-transform:uppercase;letter-spacing:.6px">Amount payable</div>
+                <div style="font-size:2.1rem;font-weight:800;color:{{ meta.color }}">
+                    {{ currency_symbol }} {{ amount|floatformat:2 }}
+                </div>
+                <div class="text-muted" style="font-size:.78rem;margin-top:4px">
+                    Order {{ order.order_number }} &middot; {{ meta.brand }} merchant <em>DEMO-MERCHANT</em>
+                </div>
+            </div>
+
+            <!-- Wallet id -->
+            <div class="form-group">
+                <label class="form-label">{{ meta.id_label }}</label>
+                <input type="text" class="form-control" value="{{ meta.id_value }}" readonly
+                       aria-describedby="wallet-id-help">
+            </div>
+
+            <!-- MPIN -->
+            <div class="form-group">
+                <label class="form-label">MPIN</label>
+                <input type="password" class="form-control" value="{{ meta.mpin }}" readonly>
+                <div id="wallet-id-help" class="text-muted" style="font-size:.76rem;margin-top:6px">
+                    Pre-filled demo credentials — nothing is verified or transmitted.
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div style="display:grid;gap:10px;margin-top:22px">
+                <button type="submit" name="outcome" value="success" class="btn btn-block btn-lg"
+                        style="background:{{ meta.color }};border-color:{{ meta.color }};color:#fff">
+                    <i class="fas fa-circle-check"></i> Confirm payment — {{ currency_symbol }} {{ amount|floatformat:2 }}
+                </button>
+                <button type="submit" name="outcome" value="failure" class="btn btn-ghost btn-block">
+                    <i class="fas fa-circle-xmark"></i> Simulate declined payment
+                </button>
+            </div>
+
+            <div class="text-center mt-3">
+                <a href="{% url 'cart' %}" class="text-muted" style="font-size:.82rem">
+                    <i class="fas fa-arrow-left"></i> Back to cart
+                </a>
+            </div>
+        </form>
+    </div>
+
+    <p class="text-muted text-center mt-3" style="font-size:.78rem">
+        <i class="fas fa-shield-halved"></i>
+        A successful simulation marks the order <strong>paid</strong> and emails a receipt,
+        exactly like a real gateway callback would.
+    </p>
+</div>
+{% endblock %}

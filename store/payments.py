@@ -29,25 +29,86 @@ def is_paypal_configured():
     return bool(settings.PAYPAL_CLIENT_ID and settings.PAYPAL_SECRET)
 
 
+# ---------------------------------------------------------------
+# Simulated (demo) gateways — eSewa & Khalti
+# ---------------------------------------------------------------
+# This project is a portfolio/demo store, so the Nepali wallets are NOT wired
+# to the real eSewa/Khalti APIs. Instead checkout renders a locally hosted page
+# that mimics the wallet's payment screen and lets the shopper confirm or
+# decline a fake transaction. Nothing external is contacted, no money moves.
+SIMULATED_GATEWAYS = {
+    'esewa': {
+        'value': 'esewa',
+        'label': 'eSewa (Simulated)',
+        'brand': 'eSewa',
+        'tagline': 'Nepal’s digital wallet',
+        'color': '#60bb46',
+        'color_dark': '#4a9c37',
+        'icon': 'fa-wallet',
+        'id_label': 'eSewa ID (Mobile Number)',
+        'id_value': '9800000000',
+        'mpin': '1234',
+    },
+    'khalti': {
+        'value': 'khalti',
+        'label': 'Khalti (Simulated)',
+        'brand': 'Khalti',
+        'tagline': 'Pay with Khalti wallet',
+        'color': '#5c2d91',
+        'color_dark': '#4a2374',
+        'icon': 'fa-mobile-alt',
+        'id_label': 'Khalti Mobile Number',
+        'id_value': '9800000000',
+        'mpin': '1234',
+    },
+}
+
+# Bank-transfer details shown on the order page (demo account).
+BANK_TRANSFER_DETAILS = {
+    'bank_name': 'Nay Bank',
+    'account_name': 'Newa Store Pvt. Ltd.',
+    'account_number': '0123456789012',
+    'branch': 'Kathmandu — New Road',
+    'swift': 'NAYBNPKA',
+    'instructions': (
+        'Transfer the exact order total to the account below, then reply to your '
+        'order confirmation email with the deposit slip. Your order is confirmed '
+        'as soon as the payment is verified (usually within 1 business day).'
+    ),
+}
+
+
+def get_simulated_gateway(value):
+    """Metadata for a simulated wallet, or None if it isn't one."""
+    return SIMULATED_GATEWAYS.get(value)
+
+
+def is_simulated_gateway(value):
+    return value in SIMULATED_GATEWAYS
+
+
 def available_payment_methods():
     """Checkout radio choices, marking unconfigured gateways as disabled hints.
 
     Each entry is a (value, label, disabled) tuple so the template can render
     unavailable methods as disabled placeholders instead of silently dropping
     them (keeps the checkout UI looking complete before keys are added).
+
+    eSewa/Khalti and Nay Bank Transfer are always available because they are
+    either simulated locally or settled offline.
     """
     methods = [
-        ('esewa', 'eSewa', False),
-        ('khalti', 'Khalti', False),
-        ('stripe', 'Credit/Debit Card (Stripe)', False),
-        ('paypal', 'PayPal', False),
+        ('esewa', SIMULATED_GATEWAYS['esewa']['label'], False),
+        ('khalti', SIMULATED_GATEWAYS['khalti']['label'], False),
+        ('nay_bank', 'Nay Bank Transfer', False),
         ('cod', 'Cash on Delivery', False),
-        ('bank_transfer', 'Bank Transfer', False),
+        ('stripe', 'Credit/Debit Card (Stripe)', True),
+        ('paypal', 'PayPal', True),
     ]
-    if not is_stripe_configured():
-        methods = [m if m[0] != 'stripe' else (m[0], m[1], True) for m in methods]
-    if not is_paypal_configured():
-        methods = [m if m[0] != 'paypal' else (m[0], m[1], True) for m in methods]
+    if is_stripe_configured():
+        methods = [m if m[0] != 'stripe' else (m[0], m[1], False) for m in methods]
+    if is_paypal_configured():
+        methods = [m if m[0] != 'paypal' else (m[0], m[1], False) for m in methods]
     return methods
 
 
