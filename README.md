@@ -123,31 +123,37 @@ copy .env.example .env       # Windows
 # 3. Install dependencies
 python -m pip install -r requirements.txt
 
-# 4. Apply database migrations (PostgreSQL)
-python manage.py migrate
-
-# 5. Seed the catalog with real game data from the CheapShark sweep
-python populate_db.py --reset
-
-# 6. (Optional) import the FULL Steam catalog (~60-80k games, ~20 min)
-python manage.py import_steamspy
-
-# 7. Run the development server
+# 4. Run it. That's all - the server bootstraps itself on startup.
 python manage.py runserver
 ```
 
 Then open <http://127.0.0.1:8000/>.
 
+### What happens on startup
+
+`runserver` **bootstraps itself in the background**: it applies any pending
+migrations, imports the full SteamSpy catalog when the database is empty
+(resumable, ~15–20 min the very first time), repairs missing game artwork, and
+sweeps stored artwork URLs for dead links. Every step is incremental and
+rate-limited, so a normal restart finishes its bootstrap in milliseconds. The
+server starts listening immediately; the first page load on a brand-new
+database may just need a moment.
+
+```bash
+python manage.py runserver --skip-bootstrap    # vanilla runserver (or set NEWASTORE_SKIP_BOOTSTRAP=1)
+python manage.py runserver --force-bootstrap   # run repair/audit right now
+python manage.py ensure_ready --force          # same, outside of runserver
+```
+
 The `.env` file is intentionally gitignored. Start from `.env.example` and
 never commit real passwords, API keys, SMTP app passwords, or payment secrets:
 
 ```
-DJANGO_DB=postgres          # or "sqlite" to fall back
 DB_NAME=newastore
 DB_USER=newastore
 DB_PASSWORD=...
 DB_HOST=localhost
-DB_PORT=5432
+DB_PORT=5433
 ```
 
 ### Demo credentials
@@ -164,13 +170,18 @@ DB_PORT=5432
 ## Useful commands
 
 ```bash
-python manage.py test store          # run the test suite
-python manage.py createsuperuser     # create your own admin
-python manage.py collectstatic       # gather static files (production)
-python populate_db.py --reset        # re-seed the catalog from live APIs
-python manage.py import_steamspy     # full Steam catalog import (resumable)
-python manage.py import_steamspy --pages 5   # import 5 pages then stop
-python smoke_test.py                 # hit every route and report status codes
+python manage.py test store                    # run the test suite
+python manage.py createsuperuser               # create your own admin
+python manage.py collectstatic                 # gather static files (production)
+
+# --- data pipeline (all of this also runs automatically on runserver) ---
+python manage.py ensure_ready                  # migrations + import + repair + audit
+python manage.py ensure_ready --force          # run repair/audit now
+python manage.py import_steamspy               # full Steam catalog import (resumable)
+python manage.py import_steamspy --pages 5     # import 5 pages then stop
+python manage.py repair_missing_images         # fill in placeholder artwork
+python manage.py audit_product_images          # probe stored URLs for dead links
+python verify_all.py                           # end-to-end health check (72 checks)
 ```
 
 ---
