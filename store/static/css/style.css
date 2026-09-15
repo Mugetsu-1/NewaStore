@@ -508,3 +508,70 @@ table.data tr:hover td { background:var(--surface-2); }
   .hero-game .hero-slide.active { padding:36px 0; }
   .hero-price { width:100%; justify-content:center; }
 }
+/* ============================================================
+   Dynamic interaction polish
+   ============================================================ */
+
+/* Staff badge next to the account menu (visible only to staff) */
+.staff-badge {
+    display: inline-block; margin-left: 6px; padding: 1px 6px;
+    background: var(--primary); color: #04140a; border-radius: 999px;
+    font-size: .58rem; font-weight: 800; letter-spacing: .5px; vertical-align: middle;
+}
+
+/* Header quietly shrinks once the page is scrolled */
+.header { transition: padding .25s ease, box-shadow .25s ease, background .25s ease; }
+.header.shrunk { box-shadow: 0 8px 26px rgba(0, 0, 0, .32); }
+.header.shrunk .logo { transform: scale(.94); }
+.header .logo { transition: transform .25s ease; }
+
+/* Page fade-in */
+@keyframes pageFadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+main { animation: pageFadeIn .32s ease both; }
+@media (prefers-reduced-motion: reduce) {
+    main { animation: none; }
+    .cart-count.pop { animation: none; }
+    .skeleton-card .sk-media, .skeleton-card .sk-line { animation: none; }
+}
+
+/* Cart badge pop whenever the count changes */
+@keyframes cartPop { 0% { transform: scale(1); } 35% { transform: scale(1.55); } 70% { transform: scale(.9); } 100% { transform: scale(1); } }
+.cart-count.pop { animation: cartPop .5s cubic-bezier(.34, 1.56, .64, 1); }
+
+/* Skeleton shimmer shown while AJAX results swap */
+@keyframes shimmer { 100% { background-position: -200% 0; } }
+.sk-shimmer {
+    background: linear-gradient(90deg,
+        rgba(255, 255, 255, .05) 25%, rgba(255, 255, 255, .13) 37%, rgba(255, 255, 255, .05) 63%);
+    background-size: 200% 100%;
+    animation: shimmer 1.3s linear infinite;
+}
+.skeleton-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 18px; padding: 6px 0; }
+.skeleton-card { border-radius: 14px; overflow: hidden; background: var(--surface-2); border: 1px solid var(--border); }
+.skeleton-card .sk-media { aspect-ratio: 16 / 9; }
+.skeleton-card .sk-line { height: 12px; margin: 12px; border-radius: 6px; }
+.skeleton-card .sk-line.short { width: 46%; }
+
+/* Result counter pulse after a filter/sort change */
+@keyframes countPulse { from { opacity: .35; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+#result-count.pulse { animation: countPulse .35s ease; }
+
+/* Card hover lift */
+.product-card { transition: transform .22s ease, box-shadow .22s ease; }
+@media (hover: hover) {
+    .product-card:hover { transform: translateY(-4px); }
+}
+
+/* Inline "busy" spinner for submit buttons */
+.btn.is-busy { position: relative; pointer-events: none; opacity: .85; }
+.btn.is-busy::after {
+    content: ''; position: absolute; right: 14px; top: 50%;
+    width: 14px; height: 14px; margin-top: -7px;
+    border: 2px solid currentColor; border-right-color: transparent;
+    border-radius: 50%; animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Quick press feedback for instant actions (wishlist, add to cart) */
+@keyframes pressPop { 0% { transform: scale(1); } 45% { transform: scale(.9); } 100% { transform: scale(1); } }
+.is-pressed { animation: pressPop .34s ease; }

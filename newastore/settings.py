@@ -75,7 +75,9 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'newastore.wsgi.application'
 
-# Database: PostgreSQL only (no sqlite fallback).
+# Database — PostgreSQL only (the SQLite fallback was removed).
+# Always talks to the Postgres instance described in .env (psycopg3,
+# non-default port 5433).
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
@@ -83,7 +85,7 @@ DATABASES = {
         'USER': os.environ.get('DB_USER', 'newastore'),
         'PASSWORD': os.environ.get('DB_PASSWORD', ''),
         'HOST': os.environ.get('DB_HOST', 'localhost'),
-        'PORT': os.environ.get('DB_PORT', '5432'),
+        'PORT': os.environ.get('DB_PORT', '5433'),
         'CONN_MAX_AGE': 60,  # persistent connections
     }
 }
@@ -149,9 +151,15 @@ EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'Newa Store <noreply@newastore.com>')
 
 # Payments
-ESEWA_MERCHANT_CODE = os.environ.get('ESEWA_MERCHANT_CODE', 'EPAYTEST')
-ESEWA_SECRET_KEY = os.environ.get('ESEWA_SECRET_KEY', '8gBm/:&EnhH.1/q')
-ESEWA_URL = os.environ.get('ESEWA_URL', 'https://rc-epay.esewa.com.np/api/epay/main/v2/form')
+# ---------------------------------------------------------------------------
+# Secrets never belong in source control: everything below is read from .env,
+# and the defaults are intentionally empty. eSewa/Khalti are SIMULATED in this
+# demo store (see store/payments.py), so their credentials are not required to
+# exercise the checkout flow.
+# ---------------------------------------------------------------------------
+ESEWA_MERCHANT_CODE = os.environ.get('ESEWA_MERCHANT_CODE', '')
+ESEWA_SECRET_KEY = os.environ.get('ESEWA_SECRET_KEY', '')
+ESEWA_URL = os.environ.get('ESEWA_URL', '')
 KHALTI_PUBLIC_KEY = os.environ.get('KHALTI_PUBLIC_KEY', '')
 KHALTI_SECRET_KEY = os.environ.get('KHALTI_SECRET_KEY', '')
 STRIPE_PUBLIC_KEY = os.environ.get('STRIPE_PUBLIC_KEY', '')

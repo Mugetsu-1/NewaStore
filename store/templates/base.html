@@ -112,12 +112,31 @@
                     <span class="cart-count" data-cart-count {% if not cart or cart.items_count == 0 %}style="display:none"{% endif %}>{{ cart.items_count|default:0 }}</span>
                     <span class="label">Cart</span>
                 </button>
+                {% if user.is_staff %}
+                <a href="{% url 'admin:index' %}" class="action-btn" title="Admin dashboard"
+                   style="color:var(--primary)">
+                    <i class="fas fa-gauge-high"></i><span class="label">Admin</span>
+                </a>
+                {% endif %}
                 {% if user.is_authenticated %}
                 <div class="nav-item">
                     <a href="{% url 'profile' %}" class="action-btn" title="Account">
                         <i class="far fa-user"></i><span class="label">Account</span>
+                        {% if user.is_staff %}<span class="staff-badge">STAFF</span>{% endif %}
                     </a>
-                    <div class="mega-menu" style="left:auto;right:0;min-width:200px">
+                    <div class="mega-menu" style="left:auto;right:0;min-width:210px">
+                        {% if user.is_staff %}
+                        <a href="{% url 'admin:index' %}" style="color:var(--primary);font-weight:600">
+                            <i class="fas fa-gauge-high"></i> Admin Dashboard
+                        </a>
+                        <a href="{% url 'admin:store_order_changelist' %}">
+                            <i class="fas fa-clipboard-list"></i> Manage Orders
+                        </a>
+                        <a href="{% url 'admin:store_product_changelist' %}">
+                            <i class="fas fa-boxes-stacked"></i> Manage Products
+                        </a>
+                        <div style="height:1px;background:var(--border);margin:6px 0"></div>
+                        {% endif %}
                         <a href="{% url 'profile' %}"><i class="fas fa-user"></i> Dashboard</a>
                         <a href="{% url 'order_history' %}"><i class="fas fa-box"></i> My Orders</a>
                         <a href="{% url 'wishlist' %}"><i class="fas fa-heart"></i> Wishlist</a>

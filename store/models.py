@@ -472,10 +472,11 @@ class Order(models.Model):
     PAYMENT_METHOD_CHOICES = [
         ('esewa', 'eSewa'),
         ('khalti', 'Khalti'),
+        ('nay_bank', 'Nay Bank Transfer'),
+        ('bank_transfer', 'Bank Transfer (legacy)'),
         ('stripe', 'Stripe'),
         ('paypal', 'PayPal'),
         ('cod', 'Cash on Delivery'),
-        ('bank_transfer', 'Bank Transfer'),
     ]
 
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders')
