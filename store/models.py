@@ -163,6 +163,12 @@ class ProductImage(models.Model):
                               help_text="Local file (downloaded). Optional when external_url is set.")
     external_url = models.URLField(max_length=500, blank=True,
                                    help_text="Hotlinked image (e.g. Steam CDN capsule art)")
+    # Fetch-once derivative: a locally stored WebP card thumbnail. When set,
+    # listing pages are served from our own media (no Steam CDN dependency).
+    thumbnail = models.ImageField(upload_to='artwork/thumbs/', blank=True,
+                                  help_text="Generated card thumbnail (WebP). "
+                                            "Materialized from external_url by "
+                                            "'materialize_images'.")
     alt_text = models.CharField(max_length=200, blank=True)
     is_primary = models.BooleanField(default=False)
     sort_order = models.IntegerField(default=0)
@@ -176,12 +182,23 @@ class ProductImage(models.Model):
 
     @property
     def src_url(self):
-        """Hotlinked URL if set, otherwise the local file; '' when neither."""
+        """Full-size art: hotlinked URL if set, otherwise the local file; '' when neither."""
         if self.external_url:
             return self.external_url
         if self.image:
             return self.image.url
         return ''
+
+    @property
+    def thumbnail_url(self):
+        """Card art: the materialized WebP when available, else the full-size source.
+
+        Templates listing many products should use this so grids are served
+        from our own media once 'materialize_images' has processed the row.
+        """
+        if self.thumbnail:
+            return self.thumbnail.url
+        return self.src_url
 
     def save(self, *args, **kwargs):
         if self.is_primary:
