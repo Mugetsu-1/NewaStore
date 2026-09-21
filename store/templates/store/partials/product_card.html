@@ -3,8 +3,8 @@
     <div class="product-media">
         <a href="{{ product.get_absolute_url }}">
             {% with img=product.images.first %}
-                {% if img and img.src_url %}
-                    <img src="{{ img.src_url }}" alt="{{ img.alt_text|default:product.name }}" loading="lazy" onerror="this.onerror=null;this.src='{% static 'images/placeholder.svg' %}'">
+                {% if img and img.thumbnail_url %}
+                    <img src="{{ img.thumbnail_url }}" alt="{{ img.alt_text|default:product.name }}" loading="lazy" onerror="this.onerror=null;this.src='{% static 'images/placeholder.svg' %}'">
                 {% else %}
                     <img src="{% static 'images/placeholder.svg' %}" alt="{{ product.name }}" loading="lazy">
                 {% endif %}
