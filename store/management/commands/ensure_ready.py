@@ -14,7 +14,12 @@ Pipeline
 3. Art repair - runs ``repair_missing_images`` when products show the
                 placeholder, unless the same problem was attempted recently
                 (TTL 12h) or the placeholder count has not changed.
-4. URL audit  - probes stored artwork URLs for dead links through
+4. Thumbnails - runs ``materialize_images``: downloads each hotlinked capsule
+                once and stores a local WebP, so listing pages are served from
+                our own media and never depend on Steam's CDN at request time.
+                Resumable (rows with a thumbnail are skipped), so it makes
+                steady progress across restarts until every card is local.
+5. URL audit  - probes stored artwork URLs for dead links through
                 ``audit_product_images``: a bounded slice per run (default
                 5,000 URLs), resumable, so the 82k-URL catalog is swept over a
                 few restarts instead of blocking one boot.
@@ -23,6 +28,7 @@ Pipeline
     python manage.py ensure_ready --force         # ignore cadence markers
     python manage.py ensure_ready --skip-import --skip-repair --skip-audit
     python manage.py ensure_ready --audit-limit 20000 --workers 32
+    python manage.py ensure_ready --materialize-limit 4000   # cap the sweep
 """
 import json
 import time
@@ -53,9 +59,12 @@ class Command(BaseCommand):
         parser.add_argument("--skip-migrate", action="store_true")
         parser.add_argument("--skip-import", action="store_true")
         parser.add_argument("--skip-repair", action="store_true")
+        parser.add_argument("--skip-materialize", action="store_true")
         parser.add_argument("--skip-audit", action="store_true")
         parser.add_argument("--repair-limit", type=int, default=0,
                             help="Max products to repair this run (0 = all).")
+        parser.add_argument("--materialize-limit", type=int, default=0,
+                            help="Max thumbnails to materialize this run (0 = all remaining).")
         parser.add_argument("--audit-limit", type=int, default=DEFAULT_AUDIT_SLICE,
                             help="URLs probed per audit run.")
         parser.add_argument("--workers", type=int, default=24)
@@ -109,19 +118,19 @@ class Command(BaseCommand):
             pending = self._pending_migrations()
             if pending:
                 self.stdout.write(self.style.MIGRATE_HEADING(
-                    f"[1/4] Applying {len(pending)} pending migration(s)..."))
+                    f"[1/5] Applying {len(pending)} pending migration(s)..."))
                 call_command("migrate", interactive=False, verbosity=0)
                 self.stdout.write(self.style.SUCCESS(f"  applied {len(pending)}."))
                 notes.append(f"migrations={len(pending)}")
             else:
-                self.stdout.write("[1/4] Migrations: up to date.")
+                self.stdout.write("[1/5] Migrations: up to date.")
 
         # ---- 2. catalog import (only when the DB is empty) -------------------
         product_count = Product.objects.count()
         if not options["skip_import"]:
             if product_count == 0:
                 self.stdout.write(self.style.WARNING(
-                    "[2/4] Catalog is empty - importing the full SteamSpy catalog.\n"
+                    "[2/5] Catalog is empty - importing the full SteamSpy catalog.\n"
                     "      This can take 15-20 minutes. The server stays up, and the\n"
                     "      import resumes from its marker if it is interrupted."))
                 call_command("import_steamspy", stdout=self.stdout, stderr=self.stderr)
@@ -130,7 +139,7 @@ class Command(BaseCommand):
                 notes.append("import=full")
             else:
                 self.stdout.write(
-                    f"[2/4] Catalog: {product_count:,} products present - import skipped.")
+                    f"[2/5] Catalog: {product_count:,} products present - import skipped.")
         else:
             product_count = Product.objects.count()
 

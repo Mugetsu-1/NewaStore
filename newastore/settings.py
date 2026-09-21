@@ -120,6 +120,13 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
+# Artwork pipeline (store/artwork.py). Card art is downloaded once from the
+# source CDN and stored as a light WebP under MEDIA_ROOT, so listing pages
+# never depend on Steam's CDN at request time. 616px matches Steam's native
+# capsule width, so the same derivative is crisp on cards and detail pages.
+ARTWORK_THUMB_WIDTH = int(os.environ.get('ARTWORK_THUMB_WIDTH', 616))
+ARTWORK_WEBP_QUALITY = int(os.environ.get('ARTWORK_WEBP_QUALITY', 82))
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Authentication

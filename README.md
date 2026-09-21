@@ -29,7 +29,7 @@ customized admin dashboard, and a test suite.
 
 | Source | What it provides | Used by |
 |--------|------------------|---------|
-| **CheapShark** (no key) | Active deals across 14 stores: real USD prices, Metacritic scores, Steam ratings, thumbnails | `populate_db.py` sweep + live search import |
+| **CheapShark** (no key) | Active deals across 14 stores: real USD prices, Metacritic scores, Steam ratings, thumbnails | `ensure_ready`/`audit_product_images` + live search import |
 | **Steam appdetails** (no key) | Genres, real descriptions, developers, publishers, release dates, HD screenshots | Seeder enrichment (featured games) |
 | **SteamSpy** (no key) | The full Steam catalog (~60-80k games): names, prices in cents, developers | `manage.py import_steamspy` |
 
@@ -93,13 +93,13 @@ bulk downloads are needed.
 - Newsletter subscriptions, contact messages
 - Signals to auto-create wishlists, track order status changes
 - Byte-compiled-ready, environment-variable configuration
-- 56 automated tests
+- Automated health checks and checkout verification scripts
 
 ---
 
 ## Quick Start
 
-> Requires **Python 3.10+** and **PostgreSQL 14+** (service running; see `.env`).
+> Requires **Python 3.10+** and **PostgreSQL 14+** (service running; see `.env.example`).
 
 ```bash
 # 0. Create and activate a virtual environment
@@ -170,7 +170,8 @@ DB_PORT=5433
 ## Useful commands
 
 ```bash
-python manage.py test store                    # run the test suite
+python manage.py test                          # run Django's test suite
+python test_checkout.py                         # exercise the checkout flow against the configured database
 python manage.py createsuperuser               # create your own admin
 python manage.py collectstatic                 # gather static files (production)
 
@@ -181,7 +182,7 @@ python manage.py import_steamspy               # full Steam catalog import (resu
 python manage.py import_steamspy --pages 5     # import 5 pages then stop
 python manage.py repair_missing_images         # fill in placeholder artwork
 python manage.py audit_product_images          # probe stored URLs for dead links
-python verify_all.py                           # end-to-end health check (72 checks)
+python verify_all.py                           # end-to-end health check against the configured database
 ```
 
 ---
@@ -191,8 +192,11 @@ python verify_all.py                           # end-to-end health check (72 che
 ```
 newastore/
 ├── manage.py
-├── populate_db.py            # seeds real game catalog from CheapShark + Steam APIs
-├── smoke_test.py             # route smoke test
+├── dump_status.py             # print database and catalog status
+├── test_checkout.py          # checkout-flow verification script
+├── verify_all.py             # end-to-end route, checkout, admin, and configuration checks
+├── verify_images.py          # inspect stored product artwork
+├── verify_state.py           # inspect email and checkout state
 ├── requirements.txt
 ├── .env.example              # safe configuration template
 ├── media/                    # local uploaded images (gitignored)
@@ -276,7 +280,6 @@ Key settings can be overridden via environment variables:
 | `DJANGO_SECRET_KEY` | Secret key (set in production) |
 | `DJANGO_DEBUG` | `False` in production |
 | `DJANGO_ALLOWED_HOSTS` | Comma-separated host list |
-| `DJANGO_DB` | `postgres` (default) or `sqlite` fallback |
 | `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT` | PostgreSQL connection |
 | `DJANGO_EMAIL_BACKEND` | Email backend (defaults to console) |
 | `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD` | SMTP |
@@ -293,6 +296,10 @@ Key settings can be overridden via environment variables:
 
 By default email is printed to the console, so order confirmation and password
 reset emails can be viewed in the terminal during development.
+
+`verify_all.py` and the checkout verification scripts use the configured
+PostgreSQL database and may create temporary test records. Run them only
+against a development or staging database.
 
 ---
 
