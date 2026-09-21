@@ -156,7 +156,7 @@ class Command(BaseCommand):
             )
             if placeholders and cadence_ok:
                 self.stdout.write(self.style.WARNING(
-                    f"[3/4] Repairing artwork for {placeholders:,} placeholder product(s)..."))
+                    f"[3/5] Repairing artwork for {placeholders:,} placeholder product(s)..."))
                 call_command("repair_missing_images",
                              limit=options["repair_limit"], workers=options["workers"],
                              stdout=self.stdout, stderr=self.stderr)
@@ -166,16 +166,40 @@ class Command(BaseCommand):
                 notes.append(f"repair->placeholders={placeholders}")
             elif placeholders:
                 self.stdout.write(
-                    f"[3/4] Artwork repair: {placeholders:,} placeholder(s) known; "
+                    f"[3/5] Artwork repair: {placeholders:,} placeholder(s) known; "
                     "retry skipped (attempted recently). Use --force to retry now.")
             else:
-                self.stdout.write("[3/4] Artwork repair: nothing to do.")
+                self.stdout.write("[3/5] Artwork repair: nothing to do.")
         else:
             placeholders = self._placeholder_count()
 
+        # ---- 4. materialize local WebP thumbnails (fetch-once) --------------
+        # Download every hotlinked capsule once and store a local WebP so
+        # listing pages stop depending on Steam's CDN (the permanent fix for
+        # thumbnails that 403/404/rate-limit). Resumable: rows that already
+        # carry a thumbnail are skipped, so this only ever does new work.
+        if not options["skip_materialize"]:
+            pending_thumbs = (ProductImage.objects.exclude(external_url="")
+                              .filter(thumbnail="").count())
+            if pending_thumbs:
+                slice_note = (f"the next {options['materialize_limit']:,} of "
+                              if options["materialize_limit"] else "all ")
+                self.stdout.write(self.style.WARNING(
+                    f"[4/5] Materializing {slice_note}{pending_thumbs:,} card "
+                    "thumbnail(s) into local WebP..."))
+                call_command("materialize_images",
+                             limit=options["materialize_limit"],
+                             workers=options["workers"],
+                             stdout=self.stdout, stderr=self.stderr)
+                remaining_thumbs = (ProductImage.objects.exclude(external_url="")
+                                    .filter(thumbnail="").count())
+                notes.append(f"materialize->pending={remaining_thumbs}")
+            else:
+                self.stdout.write("[4/5] Thumbnails: every card already local.")
+
         self._state_after_handle = (state, options, notes, placeholders, started)
 
-        # ---- 4. resumable URL audit ----------------------------------------
+        # ---- 5. resumable URL audit ----------------------------------------
         if not options["skip_audit"]:
             after_id = int(state.get("audit_after_id") or 0)
             completed_at = self._parse_iso(state.get("audit_completed_at"))
@@ -184,14 +208,14 @@ class Command(BaseCommand):
             if sweep_fresh and not force:
                 days = (timezone.now() - completed_at).days
                 self.stdout.write(
-                    f"[4/4] URL audit: full sweep finished {days} day(s) ago - skipped.")
+                    f"[5/5] URL audit: full sweep finished {days} day(s) ago - skipped.")
             else:
                 remaining = ProductImage.objects.exclude(external_url="").filter(
                     id__gt=after_id).count()
                 if remaining:
                     slice_size = min(remaining, options["audit_limit"])
                     self.stdout.write(self.style.WARNING(
-                        f"[4/4] URL audit: probing the next {slice_size:,} of "
+                        f"[5/5] URL audit: probing the next {slice_size:,} of "
                         f"{remaining:,} stored URL(s)..."))
                     call_command("audit_product_images",
                                  after_id=after_id, limit=options["audit_limit"],
