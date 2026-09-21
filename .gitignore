@@ -10,7 +10,12 @@ env/
 *.egg-info/
 .pytest_cache/
 .coverage
+.coverage.*
+.mypy_cache/
+.ruff_cache/
 htmlcov/
+*.py,cover
+.tox/
 
 # Django
 db.sqlite3
@@ -43,3 +48,4 @@ steamspy_progress*
 # Build and packaging output
 build/
 dist/
+pip-wheel-metadata/
