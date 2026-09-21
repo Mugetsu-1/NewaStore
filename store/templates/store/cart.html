@@ -18,7 +18,7 @@
             <div class="cart-item" data-item="{{ item.id }}">
                 <a href="{{ item.product.get_absolute_url }}">
                     {% with img=item.product.images.first %}
-                        <img src="{% if img and img.src_url %}{{ img.src_url }}{% else %}{% static 'images/placeholder.svg' %}{% endif %}" alt="{{ item.product.name }}" onerror="this.onerror=null;this.src='{% static 'images/placeholder.svg' %}'">
+                        <img src="{% if img and img.thumbnail_url %}{{ img.thumbnail_url }}{% else %}{% static 'images/placeholder.svg' %}{% endif %}" alt="{{ item.product.name }}" onerror="this.onerror=null;this.src='{% static 'images/placeholder.svg' %}'">
                     {% endwith %}
                 </a>
                 <div>

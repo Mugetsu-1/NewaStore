@@ -70,8 +70,8 @@ def home(request):
                 bg = img
         hero_slides.append({
             'product': p,
-            'bg_url': (bg or imgs[0]).src_url,
-            'art_url': imgs[0].src_url,
+            'bg_url': (bg or imgs[0]).thumbnail_url,
+            'art_url': imgs[0].thumbnail_url,
         })
 
     new_arrivals = products.order_by(F('published_at').desc(nulls_last=True))[:8]
@@ -168,7 +168,7 @@ def product_list(request):
         'page_obj': page_obj,
         'products': page_obj.object_list,
         'form': form,
-        'total_count': products.count(),
+        'total_count': page_obj.paginator.count,
         'genres': genres,
         'page_title': 'Shop',
     }
@@ -215,7 +215,7 @@ def tag_detail(request, slug):
         'products': page_obj.object_list,
         'page_title': f'Tag: {tag.name}',
         'form': ProductSearchForm(),
-        'total_count': products.count(),
+        'total_count': page_obj.paginator.count,
     })
 
 
@@ -237,7 +237,7 @@ def search_suggest(request):
         results.append({
             'name': p.name,
             'url': p.get_absolute_url(),
-            'image': img.src_url if img else '',
+            'image': img.thumbnail_url if img else '',
             'price': str(p.current_price),
         })
     return JsonResponse({'results': results})

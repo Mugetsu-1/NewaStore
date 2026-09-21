@@ -48,6 +48,7 @@ class GenreSerializer(serializers.Serializer):
 
 class ProductImageSerializer(serializers.Serializer):
     src = serializers.CharField(source='src_url')
+    thumb = serializers.CharField(source='thumbnail_url')
     alt = serializers.CharField(source='alt_text', default='')
     is_primary = serializers.BooleanField(default=False)
 
@@ -69,7 +70,7 @@ class ProductListSerializer(serializers.ModelSerializer):
 
     def get_image(self, obj):
         img = obj.images.first()
-        return img.src_url if img else ''
+        return img.thumbnail_url if img else ''
 
     def get_url(self, obj):
         return obj.get_absolute_url()
