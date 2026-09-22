@@ -1,6 +1,33 @@
 {% extends 'base.html' %}
 {% load static store_extras %}
 
+{% block extra_head %}
+{# JSON-LD Product schema for search rich snippets (report Ch.6 SEO) #}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org/",
+  "@type": "Product",
+  "name": "{{ product.name|escapejs }}",
+  "description": "{{ product.short_description|default:product.description|truncatewords:30|escapejs }}",
+  {% with img=product.images.first %}{% if img %}"image": "{{ request.scheme }}://{{ request.get_host }}{{ img.thumbnail_url }}",{% endif %}{% endwith %}
+  "sku": "{{ product.sku }}",
+  "category": "{{ product.category.name|default:''|escapejs }}",
+  "offers": {
+    "@type": "Offer",
+    "priceCurrency": "{{ site_settings.currency|default:'NPR' }}",
+    "price": "{{ product.current_price|floatformat:2 }}",
+    "availability": "https://schema.org/{% if product.is_in_stock %}InStock{% else %}OutOfStock{% endif %}",
+    "url": "{{ request.scheme }}://{{ request.get_host }}{{ product.get_absolute_url }}"
+  }{% if product.review_count %},
+  "aggregateRating": {
+    "@type": "AggregateRating",
+    "ratingValue": "{{ product.average_rating }}",
+    "reviewCount": "{{ product.review_count }}"
+  }{% endif %}
+}
+</script>
+{% endblock %}
+
 {% block content %}
 <div class="container">
     <nav class="breadcrumb">
@@ -231,13 +258,15 @@
         </div>
     </div>
 
-    <!-- Related -->
+    <!-- Recommendations (content-based: similar genre / category / rating / price) -->
     {% if related_products %}
-    <section class="section">
-        <div class="section-head"><div><h2>You May Also Like</h2></div></div>
+    <section class="section" data-rec-block data-rec-source="{{ product.id }}">
+        <div class="section-head"><div><h2>You May Also Like</h2><p class="text-muted" style="font-size:.85rem">Picked by genre, rating and price similarity</p></div></div>
         <div class="product-grid product-grid-4">
             {% for product in related_products %}
-                {% include 'store/partials/product_card.html' %}
+                <div data-rec-item data-rec-id="{{ product.id }}" data-rec-score="{{ product.rec_score }}">
+                    {% include 'store/partials/product_card.html' %}
+                </div>
             {% endfor %}
         </div>
     </section>
@@ -254,5 +283,24 @@ document.querySelectorAll('[data-helpful-url]').forEach(function(btn){
       .then(function(d){ btn.innerHTML = '<i class="fas fa-thumbs-up"></i> Helpful (' + d.helpful_votes + ')'; });
   });
 });
+
+// Recommendation click tracking — fires GA4 'select_recommendation' when a
+// visitor clicks a "You may also like" card (report Ch.7 evaluation hook).
+(function(){
+  var block = document.querySelector('[data-rec-block]');
+  if(!block) return;
+  block.querySelectorAll('[data-rec-item] a').forEach(function(a){
+    a.addEventListener('click', function(){
+      var item = a.closest('[data-rec-item]');
+      if(window.gtag){
+        gtag('event', 'select_recommendation', {
+          source_item_id: block.dataset.recSource,
+          recommended_item_id: item.dataset.recId,
+          similarity_score: item.dataset.recScore
+        });
+      }
+    });
+  });
+})();
 </script>
 {% endblock %}

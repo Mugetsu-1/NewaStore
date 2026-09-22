@@ -42,8 +42,15 @@ class Command(StaticFilesRunserverCommand):
                             help="Do not run the startup bootstrap.")
         parser.add_argument("--force-bootstrap", action="store_true",
                             help="Run repair/audit immediately, ignoring cadence markers.")
+        parser.add_argument("--async-bootstrap", action="store_true",
+                            help="Serve immediately and bootstrap in the background "
+                                 "(old behavior). Default is to finish data loading "
+                                 "BEFORE the server starts listening.")
         parser.add_argument("--bootstrap-workers", type=int, default=24,
-                            help="Concurrent probes used by the bootstrap.")
+                            help="Concurrent downloads/probes used by the bootstrap. "
+                                 "This bounds network concurrency only - DB writes "
+                                 "stay on one connection - and is kept polite to "
+                                 "Steam's CDN. Raise it for faster first-run art.")
 
     # --------------------------------------------------------------- hooks
 
@@ -69,24 +76,36 @@ class Command(StaticFilesRunserverCommand):
             return
 
         force = options.get("force_bootstrap", False)
-        if force:
-            self.stdout.write(self.style.WARNING(
-                "Bootstrap: forced run (--force-bootstrap)..."))
-        else:
-            self.stdout.write("Bootstrap: checking migrations / catalog / artwork...")
+        if options.get("async_bootstrap"):
+            # Old behavior: serve now, load data in the background.
+            self.stdout.write("Bootstrap: running in background (--async-bootstrap); "
+                              "some data may load after the server is up.")
+            threading.Thread(target=self._bootstrap, args=(options, False),
+                             name="newastore-bootstrap", daemon=True).start()
+            return
 
-        worker = threading.Thread(
-            target=self._bootstrap, args=(options,), name="newastore-bootstrap",
-            daemon=True,
-        )
-        worker.start()
+        # Default: finish everything the site needs BEFORE we start listening,
+        # so the URL only appears once the catalog, admin account and artwork
+        # are ready. The one long step (localizing thumbnails) is resumable, so
+        # a Ctrl-C during it is safe and the next start continues.
+        self.stdout.write(self.style.MIGRATE_HEADING(
+            "Bootstrap: preparing data before serving "
+            "(migrations, admin, catalog, artwork). This can take a while on the\n"
+            "first run; use 'runserver --async-bootstrap' to serve immediately instead."))
+        # The dead-link URL audit is a bounded background sweep, not needed
+        # before serving - run the blocking pipeline without it, then kick the
+        # audit off in a thread so boot isn't gated on network probing.
+        self._bootstrap(options, skip_audit=True)
+        threading.Thread(target=self._audit_only, args=(options,),
+                         name="newastore-audit", daemon=True).start()
 
-    def _bootstrap(self, options):
+    def _bootstrap(self, options, skip_audit):
         try:
             call_command(
                 "ensure_ready",
                 force=options.get("force_bootstrap", False),
-                workers=options.get("bootstrap_workers", 24),
+                workers=options.get("bootstrap_workers", 48),
+                skip_audit=skip_audit,
                 stdout=self.stdout, stderr=self.stderr,
             )
         except Exception as exc:  # noqa: BLE001 - never take the server down
@@ -94,3 +113,15 @@ class Command(StaticFilesRunserverCommand):
                 f"Bootstrap failed: {type(exc).__name__}: {exc}\n"
                 "  The server keeps running; fix the issue and restart, or run\n"
                 "  'python manage.py ensure_ready' manually for the full output."))
+
+    def _audit_only(self, options):
+        try:
+            call_command(
+                "ensure_ready", force=options.get("force_bootstrap", False),
+                workers=options.get("bootstrap_workers", 48),
+                skip_migrate=True, skip_import=True, skip_repair=True,
+                skip_materialize=True,
+                stdout=self.stdout, stderr=self.stderr,
+            )
+        except Exception:  # noqa: BLE001 - background sweep, never fatal
+            pass

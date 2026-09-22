@@ -38,6 +38,18 @@
       };
     </script>
     {% block extra_css %}{% endblock %}
+
+    {# Google Analytics 4 — loads only when an ID is configured in Site Settings #}
+    {% if site_settings.google_analytics_id %}
+    <script async src="https://www.googletagmanager.com/gtag/js?id={{ site_settings.google_analytics_id }}"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', '{{ site_settings.google_analytics_id }}');
+    </script>
+    {% endif %}
+    {% block extra_head %}{% endblock %}
 </head>
 <body data-placeholder-url="{% static 'images/placeholder.svg' %}">
     <!-- Topbar -->

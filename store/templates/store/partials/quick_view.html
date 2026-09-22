@@ -2,7 +2,7 @@
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
     <div>
         {% with img=product.images.first %}
-        <img src="{% if img and img.thumbnail_url %}{{ img.thumbnail_url }}{% else %}{% static 'images/placeholder.svg' %}{% endif %}" alt="{{ product.name }}" style="width:100%;border-radius:12px" onerror="this.onerror=null;this.src='{% static 'images/placeholder.svg' %}'">
+        <img src="{% if img and img.card_image_url %}{{ img.card_image_url }}{% else %}{% static 'images/placeholder.svg' %}{% endif %}" alt="{{ product.name }}" style="width:100%;border-radius:12px" onerror="this.onerror=null;this.src='{% static 'images/placeholder.svg' %}'">
         {% endwith %}
     </div>
     <div>

@@ -33,10 +33,12 @@ customized admin dashboard, and a test suite.
 | **Steam appdetails** (no key) | Genres, real descriptions, developers, publishers, release dates, HD screenshots | Seeder enrichment (featured games) |
 | **SteamSpy** (no key) | The full Steam catalog (~60-80k games): names, prices in cents, developers | `manage.py import_steamspy` |
 
-CheapShark's `page` parameter is broken, so the seeder enumerates the
-catalog by **price band x sort x store** combos instead of paging. Images are
-hotlinked from the Steam CDN (deterministic capsule URLs by appid), so no
-bulk downloads are needed.
+CheapShark's `page` parameter is broken, so the importer enumerates the
+catalog by **price band x sort x store** combos instead of paging. Artwork is
+initially sourced from the Steam CDN, then materialized as local WebP files
+under `MEDIA_ROOT` so storefront pages do not depend on third-party image
+requests. Rows confirmed to have no artwork are marked unavailable and are
+not retried on every startup.
 
 ---
 
@@ -49,6 +51,7 @@ bulk downloads are needed.
 - **Product detail** — 16:9 image gallery with HD screenshots, genre chips, Steam-style discount pricing, real release dates, tabs (description, specs, reviews, shipping), related games
 - **Search** — live AJAX suggestions + zero-result live import (searches CheapShark and imports matches instantly)
 - **JSON API** — `/api/search/`, `/api/browse/`, `/api/games/<slug>/`, `/api/genres/`, `/api/contact/`, `/api/health/` (Django REST Framework)
+- **Recommendations** — explainable content-based recommendations using genre overlap, category, rating, and price similarity
 - **AJAX shop** — filter/sort without page reloads, infinite scroll pagination
 - **Wishlist** — add/remove, move to cart
 - **Reviews & ratings** — star ratings, verified-purchase badges, helpful votes
@@ -92,6 +95,7 @@ bulk downloads are needed.
 - Custom 404 / 500 pages, maintenance mode
 - Newsletter subscriptions, contact messages
 - Signals to auto-create wishlists, track order status changes
+- Optional Google Analytics 4 tracking configured from Site Settings
 - Byte-compiled-ready, environment-variable configuration
 - Automated health checks and checkout verification scripts
 
@@ -133,16 +137,20 @@ Then open <http://127.0.0.1:8000/>.
 
 `runserver` **bootstraps itself in the background**: it applies any pending
 migrations, imports the full SteamSpy catalog when the database is empty
-(resumable, ~15–20 min the very first time), repairs missing game artwork, and
-sweeps stored artwork URLs for dead links. Every step is incremental and
-rate-limited, so a normal restart finishes its bootstrap in milliseconds. The
-server starts listening immediately; the first page load on a brand-new
-database may just need a moment.
+(resumable, ~15–20 min the very first time), repairs missing game artwork,
+materializes local WebP thumbnails, and sweeps stored artwork URLs for dead
+links. Every step is incremental and rate-limited, so a normal restart
+finishes its bootstrap in milliseconds. The server starts listening
+immediately; the first page load on a brand-new database may just need a
+moment.
 
 ```bash
 python manage.py runserver --skip-bootstrap    # vanilla runserver (or set NEWASTORE_SKIP_BOOTSTRAP=1)
-python manage.py runserver --force-bootstrap   # run repair/audit right now
+python manage.py runserver --force-bootstrap   # run repair/materialize/audit now
+python manage.py runserver --bootstrap-workers 32
 python manage.py ensure_ready --force          # same, outside of runserver
+python manage.py ensure_ready --skip-materialize
+python manage.py materialize_images --workers 16
 ```
 
 The `.env` file is intentionally gitignored. Start from `.env.example` and
@@ -181,6 +189,7 @@ python manage.py ensure_ready --force          # run repair/audit now
 python manage.py import_steamspy               # full Steam catalog import (resumable)
 python manage.py import_steamspy --pages 5     # import 5 pages then stop
 python manage.py repair_missing_images         # fill in placeholder artwork
+python manage.py materialize_images            # download and store local WebP thumbnails
 python manage.py audit_product_images          # probe stored URLs for dead links
 python verify_all.py                           # end-to-end health check against the configured database
 ```
@@ -197,6 +206,8 @@ newastore/
 ├── verify_all.py             # end-to-end route, checkout, admin, and configuration checks
 ├── verify_images.py          # inspect stored product artwork
 ├── verify_state.py           # inspect email and checkout state
+├── .claude/
+│   └── launch.json            # local VS Code launch configuration
 ├── requirements.txt
 ├── .env.example              # safe configuration template
 ├── media/                    # local uploaded images (gitignored)
@@ -205,6 +216,8 @@ newastore/
 │   └── urls.py               # admin, sitemap, media, error handlers
 └── store/
     ├── models.py             # 21 models (products, orders, cart, reviews, etc.)
+    ├── recommendations.py    # explainable content-based product ranking
+    ├── artwork.py            # artwork repair, fetching, and WebP materialization
     ├── views.py              # catalog, cart, checkout, orders, account, pages
     ├── forms.py              # all forms & formsets
     ├── admin.py              # customized admin
@@ -293,6 +306,8 @@ Key settings can be overridden via environment variables:
 | `USD_TO_NPR` | USD→NPR rate used by importers (default: 135) |
 | `SEED_MAX_REQUESTS` | Max CheapShark requests in the sweep (default: 400) |
 | `SEED_ENRICH` | Top games to Steam-enrich after the sweep (default: 150) |
+| `ARTWORK_THUMB_WIDTH` | Width of generated local WebP thumbnails (default: 616) |
+| `ARTWORK_WEBP_QUALITY` | WebP quality for generated thumbnails (default: 82) |
 
 By default email is printed to the console, so order confirmation and password
 reset emails can be viewed in the terminal during development.
@@ -300,6 +315,10 @@ reset emails can be viewed in the terminal during development.
 `verify_all.py` and the checkout verification scripts use the configured
 PostgreSQL database and may create temporary test records. Run them only
 against a development or staging database.
+
+Google Analytics 4 is optional. Set the Measurement ID in the Site Settings
+admin form to enable page-view and recommendation-click tracking; no
+third-party analytics script is loaded when the field is blank.
 
 ---
 
@@ -317,4 +336,3 @@ against a development or staging database.
 7. Add WhiteNoise (already in `requirements.txt`) or a reverse proxy for static/media.
 8. Run `python manage.py collectstatic`.
 9. Serve behind HTTPS (security settings auto-enable when `DEBUG=False`).
- Gaming Store

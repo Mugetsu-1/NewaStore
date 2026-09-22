@@ -34,7 +34,10 @@ import json
 import time
 from datetime import timedelta
 
+import os
+
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.core.management.base import BaseCommand
 from django.db import connection
@@ -105,6 +108,53 @@ class Command(BaseCommand):
         except (TypeError, ValueError):
             return None
 
+    def _ensure_superuser(self):
+        """Create an admin account when none exists, so /admin login always works.
+
+        Credentials come from env (DJANGO_SUPERUSER_USERNAME / _EMAIL /
+        _PASSWORD) and fall back to admin/admin for local dev. A default
+        password is fine for a localhost project but must be changed before any
+        real deployment, so we say so loudly.
+        """
+        User = get_user_model()
+        if User.objects.filter(is_superuser=True).exists():
+            self.stdout.write("[1b/6] Admin account: superuser present.")
+            return
+        username = os.environ.get("DJANGO_SUPERUSER_USERNAME", "admin")
+        email = os.environ.get("DJANGO_SUPERUSER_EMAIL", "admin@newastore.local")
+        password = os.environ.get("DJANGO_SUPERUSER_PASSWORD", "admin")
+        # get_or_create on username avoids a race/dup if a non-super admin exists
+        user, created = User.objects.get_or_create(
+            username=username, defaults={"email": email})
+        user.is_staff = True
+        user.is_superuser = True
+        user.set_password(password)
+        user.save()
+        self.stdout.write(self.style.SUCCESS(
+            f"[1b/6] Admin account created: username='{username}' password='{password}'"))
+        if password == "admin":
+            self.stdout.write(self.style.WARNING(
+                "        Default password in use - change it in /admin before deploying, "
+                "or set DJANGO_SUPERUSER_PASSWORD."))
+
+    def _normalize_dead_capsule_urls(self):
+        """Bulk-swap the dead `capsule_616x353.jpg` pattern for `header.jpg`.
+
+        No network calls: a single UPDATE across every row still stored on the
+        capsule pattern. header.jpg is the universal Steam art file, so this
+        makes those cards render immediately while the local-WebP materialize
+        step localizes them for good. Only touches rows not yet localized.
+        """
+        qs = ProductImage.objects.filter(
+            external_url__contains="capsule_616x353", thumbnail="")
+        fixed = 0
+        # F-expression string replace keeps it to one SQL statement on PostgreSQL.
+        from django.db.models.functions import Replace
+        from django.db.models import Value
+        fixed = qs.update(external_url=Replace(
+            "external_url", Value("capsule_616x353.jpg"), Value("header.jpg")))
+        return fixed
+
     # ---------------------------------------------------------------- main
 
     def handle(self, *args, **options):
@@ -118,19 +168,22 @@ class Command(BaseCommand):
             pending = self._pending_migrations()
             if pending:
                 self.stdout.write(self.style.MIGRATE_HEADING(
-                    f"[1/5] Applying {len(pending)} pending migration(s)..."))
+                    f"[1/6] Applying {len(pending)} pending migration(s)..."))
                 call_command("migrate", interactive=False, verbosity=0)
                 self.stdout.write(self.style.SUCCESS(f"  applied {len(pending)}."))
                 notes.append(f"migrations={len(pending)}")
             else:
-                self.stdout.write("[1/5] Migrations: up to date.")
+                self.stdout.write("[1/6] Migrations: up to date.")
+
+        # ---- 1b. admin account (so the /admin login always works) -----------
+        self._ensure_superuser()
 
         # ---- 2. catalog import (only when the DB is empty) -------------------
         product_count = Product.objects.count()
         if not options["skip_import"]:
             if product_count == 0:
                 self.stdout.write(self.style.WARNING(
-                    "[2/5] Catalog is empty - importing the full SteamSpy catalog.\n"
+                    "[2/6] Catalog is empty - importing the full SteamSpy catalog.\n"
                     "      This can take 15-20 minutes. The server stays up, and the\n"
                     "      import resumes from its marker if it is interrupted."))
                 call_command("import_steamspy", stdout=self.stdout, stderr=self.stderr)
@@ -139,7 +192,7 @@ class Command(BaseCommand):
                 notes.append("import=full")
             else:
                 self.stdout.write(
-                    f"[2/5] Catalog: {product_count:,} products present - import skipped.")
+                    f"[2/6] Catalog: {product_count:,} products present - import skipped.")
         else:
             product_count = Product.objects.count()
 
@@ -156,7 +209,7 @@ class Command(BaseCommand):
             )
             if placeholders and cadence_ok:
                 self.stdout.write(self.style.WARNING(
-                    f"[3/5] Repairing artwork for {placeholders:,} placeholder product(s)..."))
+                    f"[3/6] Repairing artwork for {placeholders:,} placeholder product(s)..."))
                 call_command("repair_missing_images",
                              limit=options["repair_limit"], workers=options["workers"],
                              stdout=self.stdout, stderr=self.stderr)
@@ -166,36 +219,50 @@ class Command(BaseCommand):
                 notes.append(f"repair->placeholders={placeholders}")
             elif placeholders:
                 self.stdout.write(
-                    f"[3/5] Artwork repair: {placeholders:,} placeholder(s) known; "
+                    f"[3/6] Artwork repair: {placeholders:,} placeholder(s) known; "
                     "retry skipped (attempted recently). Use --force to retry now.")
             else:
-                self.stdout.write("[3/5] Artwork repair: nothing to do.")
+                self.stdout.write("[3/6] Artwork repair: nothing to do.")
         else:
             placeholders = self._placeholder_count()
 
-        # ---- 4. materialize local WebP thumbnails (fetch-once) --------------
-        # Download every hotlinked capsule once and store a local WebP so
-        # listing pages stop depending on Steam's CDN (the permanent fix for
-        # thumbnails that 403/404/rate-limit). Resumable: rows that already
-        # carry a thumbnail are skipped, so this only ever does new work.
+        # ---- 4. normalize dead capsule URLs -> header.jpg (instant) ---------
+        # The SteamSpy import stored `capsule_616x353.jpg`, which 404s for a
+        # large slice of older apps. `header.jpg` is the universal Steam art
+        # file, so a single bulk UPDATE (no network) makes those cards render
+        # immediately - important on the async path, where the site may serve
+        # before materialize has localized every row.
+        fixed = self._normalize_dead_capsule_urls()
+        if fixed:
+            self.stdout.write(self.style.SUCCESS(
+                f"[4/6] Normalized {fixed:,} dead capsule URL(s) -> header.jpg."))
+            notes.append(f"url_normalize={fixed}")
+        else:
+            self.stdout.write("[4/6] Image URLs: no dead capsule pattern to normalize.")
+
+        # ---- 5. materialize local WebP thumbnails (fetch-once) --------------
+        # Download every hotlinked image once and store a local WebP so listing
+        # pages stop depending on Steam's CDN (the permanent fix for thumbnails
+        # that 403/404/rate-limit). Resumable: rows that already carry a
+        # thumbnail are skipped, so this only ever does new work.
         if not options["skip_materialize"]:
             pending_thumbs = (ProductImage.objects.exclude(external_url="")
-                              .filter(thumbnail="").count())
+                              .filter(thumbnail="", art_unavailable=False).count())
             if pending_thumbs:
                 slice_note = (f"the next {options['materialize_limit']:,} of "
                               if options["materialize_limit"] else "all ")
                 self.stdout.write(self.style.WARNING(
-                    f"[4/5] Materializing {slice_note}{pending_thumbs:,} card "
+                    f"[5/6] Materializing {slice_note}{pending_thumbs:,} card "
                     "thumbnail(s) into local WebP..."))
                 call_command("materialize_images",
                              limit=options["materialize_limit"],
                              workers=options["workers"],
                              stdout=self.stdout, stderr=self.stderr)
                 remaining_thumbs = (ProductImage.objects.exclude(external_url="")
-                                    .filter(thumbnail="").count())
+                                    .filter(thumbnail="", art_unavailable=False).count())
                 notes.append(f"materialize->pending={remaining_thumbs}")
             else:
-                self.stdout.write("[4/5] Thumbnails: every card already local.")
+                self.stdout.write("[5/6] Thumbnails: every card already local.")
 
         self._state_after_handle = (state, options, notes, placeholders, started)
 
@@ -208,14 +275,14 @@ class Command(BaseCommand):
             if sweep_fresh and not force:
                 days = (timezone.now() - completed_at).days
                 self.stdout.write(
-                    f"[5/5] URL audit: full sweep finished {days} day(s) ago - skipped.")
+                    f"[6/6] URL audit: full sweep finished {days} day(s) ago - skipped.")
             else:
                 remaining = ProductImage.objects.exclude(external_url="").filter(
                     id__gt=after_id).count()
                 if remaining:
                     slice_size = min(remaining, options["audit_limit"])
                     self.stdout.write(self.style.WARNING(
-                        f"[5/5] URL audit: probing the next {slice_size:,} of "
+                        f"[6/6] URL audit: probing the next {slice_size:,} of "
                         f"{remaining:,} stored URL(s)..."))
                     call_command("audit_product_images",
                                  after_id=after_id, limit=options["audit_limit"],
@@ -234,7 +301,7 @@ class Command(BaseCommand):
                 else:
                     state["audit_after_id"] = 0
                     state["audit_completed_at"] = timezone.now().isoformat()
-                    self.stdout.write("[4/4] URL audit: sweep complete.")
+                    self.stdout.write("[6/6] URL audit: sweep complete.")
 
         self._save_state(state)
 

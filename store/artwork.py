@@ -13,6 +13,7 @@ an S3 client call - every command, view and template stays unchanged.
 """
 import io
 import logging
+import threading
 import time
 
 import requests
@@ -30,10 +31,18 @@ STEAM_UA = {
 STEAM_APPDETAILS = "https://store.steampowered.com/api/appdetails"
 APPDETAILS_MIN_INTERVAL = 1.0  # seconds between calls - stay polite
 _last_appdetails_call = 0.0
+_appdetails_lock = threading.Lock()  # serialize the rate-limiter across workers
 
 
 class ArtworkError(Exception):
     """Raised when artwork cannot be fetched or processed."""
+
+
+class ArtworkUnavailable(ArtworkError):
+    """Raised when the source *definitively* has no art (e.g. appdetails
+    success=false for a delisted app). Distinct from a transient failure (429,
+    timeout, 5xx) so callers can permanently stop retrying the row instead of
+    hammering a dead appid on every boot."""
 
 
 # --------------------------------------------------------------- downloading
@@ -78,39 +87,140 @@ def to_webp(data, max_width=None, quality=None):
         raise ArtworkError(f"WebP conversion failed: {exc}") from exc
 
 
-def save_thumbnail(img_row, webp_bytes):
+def save_thumbnail(img_row, webp_bytes, save=True):
     """Persist thumbnail bytes through Django's storage backend.
 
     This is the single seam to replace when moving to Cloudflare R2 / S3:
     implement the same signature with an S3 client (bucket + key) and the
     whole pipeline - commands, ensure_ready, templates - keeps working.
+
+    ``save=True`` writes the file *and* saves the model (single-row callers).
+    ``save=False`` writes the file and sets the field, but leaves the DB write
+    to the caller - used by the batch command, which does one ``update()`` on
+    the main thread so worker threads never open a database connection.
+    Returns the stored file name so a caller can persist it with ``update()``.
     """
     name = f"{img_row.product_id}-{img_row.pk}.webp"
-    img_row.thumbnail.save(name, ContentFile(webp_bytes), save=True)
+    img_row.thumbnail.save(name, ContentFile(webp_bytes), save=save)
+    return img_row.thumbnail.name
 
 
-def materialize_row(img_row, timeout=15):
-    """Fetch-once for one ProductImage. Returns True when a thumbnail was made.
+# Steam serves the same art from several CDN mirrors and under several file
+# names. The SteamSpy import stored the modern `capsule_616x353.jpg`, which
+# 404s for a large slice of older/delisted apps even though `header.jpg` (and
+# the small capsule) still resolve on every mirror. These deterministic
+# fallbacks fix hotlink rot without any rate-limited appdetails call.
+STEAM_CDN_HOSTS = (
+    "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps",
+    "https://cdn.cloudflare.steamstatic.com/steam/apps",
+    "https://cdn.akamai.steamstatic.com/steam/apps",
+)
+STEAM_ART_FILES = ("header.jpg", "capsule_616x353.jpg", "capsule_231x87.jpg")
 
-    Idempotent: rows that already carry a thumbnail are skipped by callers.
+
+def steam_cdn_candidates(appid, stored_url=""):
+    """Ordered, de-duplicated list of artwork URLs to try for one product.
+
+    The stored URL is tried first (it works for most rows); when it is a dead
+    Steam capsule, the header/small-capsule variants on each mirror are tried
+    next, so an appid almost always yields at least one live image.
     """
-    if not img_row.external_url:
+    urls = []
+    if stored_url:
+        urls.append(stored_url)
+    if appid:
+        for fname in STEAM_ART_FILES:
+            for host in STEAM_CDN_HOSTS:
+                urls.append(f"{host}/{appid}/{fname}")
+    seen, out = set(), []
+    for u in urls:
+        if u and u not in seen:
+            seen.add(u)
+            out.append(u)
+    return out
+
+
+def fetch_thumbnail(external_url, appid=None, timeout=15):
+    """Download + convert one image to WebP. **No database access.**
+
+    Pure network + CPU: tries the stored URL, then deterministic Steam CDN
+    fallbacks derived from the appid, and finally the appdetails API (which
+    knows the modern hashed asset path that the deterministic guesses miss for
+    recent/relisted apps). Returns ``(webp_bytes, winning_url)`` for the first
+    candidate that resolves. Because it never touches the ORM it is safe to call
+    from many worker threads at once - each thread would otherwise open its own
+    (thread-local) Postgres connection and exhaust the server's connection
+    slots. The caller persists the result on one thread.
+
+    Returns ``None`` when there is nothing to fetch (no URL and no appid);
+    raises :class:`ArtworkError` when every candidate fails.
+    """
+    candidates = steam_cdn_candidates(appid, external_url)
+    if not candidates and not appid:
+        return None
+    last_err = None
+    for url in candidates:
+        try:
+            raw = download_bytes(url, timeout=timeout)
+        except ArtworkError as exc:
+            last_err = exc
+            continue
+        webp, _w, _h = to_webp(raw)
+        return webp, url
+    # Every deterministic candidate 404'd. Recent apps keep their art at a hashed
+    # path only the appdetails API resolves, so ask it (rate-limited, thread-safe)
+    # before giving up - this recovers the long tail of "missing" thumbnails.
+    if appid:
+        try:
+            resolved = steam_header_image(appid)
+            raw = download_bytes(resolved, timeout=timeout)
+            webp, _w, _h = to_webp(raw)
+            return webp, resolved
+        except ArtworkUnavailable:
+            raise  # definitive: no art exists for this appid; caller marks it
+        except ArtworkError as exc:
+            last_err = exc  # transient (429/timeout/dead URL) - caller may retry
+    if last_err is None:
+        return None
+    raise last_err
+
+
+def materialize_row(img_row, appid=None, timeout=15):
+    """Fetch-once for one ProductImage (single-row / DB-attached convenience).
+
+    Wraps :func:`fetch_thumbnail` and persists on the calling thread: stores the
+    WebP and, when a fallback URL won, rewrites ``external_url`` so the detail
+    page and admin (which read the full-size source) recover too. Returns True
+    when a thumbnail was made. The batch command does not use this - it keeps
+    all DB writes on the main thread; see ``materialize_images``.
+    """
+    result = fetch_thumbnail(img_row.external_url, appid=appid, timeout=timeout)
+    if result is None:
         return False
-    raw = download_bytes(img_row.external_url, timeout=timeout)
-    webp, _w, _h = to_webp(raw)
+    webp, url = result
     save_thumbnail(img_row, webp)
+    if url != img_row.external_url:
+        img_row.external_url = url
+        img_row.save(update_fields=["external_url"])
     return True
 
 
 # ----------------------------------------------------------------- resolvers
 
 def steam_header_image(appid):
-    """Native artwork URL straight from Steam's appdetails API (rate-limited)."""
+    """Native artwork URL straight from Steam's appdetails API (rate-limited).
+
+    Thread-safe: the 1-req/sec gate is held under a lock so concurrent
+    materialize workers space their calls out politely instead of racing the
+    shared timestamp. The HTTP request itself runs outside the lock, so one slow
+    response does not stall the next worker's turn.
+    """
     global _last_appdetails_call
-    wait = APPDETAILS_MIN_INTERVAL - (time.monotonic() - _last_appdetails_call)
-    if wait > 0:
-        time.sleep(wait)
-    _last_appdetails_call = time.monotonic()
+    with _appdetails_lock:
+        wait = APPDETAILS_MIN_INTERVAL - (time.monotonic() - _last_appdetails_call)
+        if wait > 0:
+            time.sleep(wait)
+        _last_appdetails_call = time.monotonic()
     try:
         r = requests.get(STEAM_APPDETAILS, params={"appids": appid, "l": "english"},
                          headers=STEAM_UA, timeout=15)
@@ -118,15 +228,20 @@ def steam_header_image(appid):
         raise ArtworkError(f"{type(exc).__name__}: {exc}") from exc
     if r.status_code != 200:
         raise ArtworkError(f"HTTP {r.status_code}")
-    entry = (r.json() or {}).get(str(appid)) or {}
+    entry = (r.json() or {}).get(str(appid))
+    if entry is None:
+        # HTTP 200 but no entry for this appid: Steam returns an empty/null body
+        # when it is rate-limiting, so treat this as transient (retry later),
+        # NOT as a definitive "no art exists".
+        raise ArtworkError("appdetails returned no entry (rate-limited?)")
     if not entry.get("success"):
-        raise ArtworkError("appdetails success=false (delisted or wrong appid)")
+        raise ArtworkUnavailable("appdetails success=false (delisted or wrong appid)")
     data = entry.get("data") or {}
     for key in ("header_image", "capsule_imagev5", "capsule_image"):
         url = data.get(key)
         if url:
             return url
-    raise ArtworkError("no image fields in appdetails payload")
+    raise ArtworkUnavailable("no image fields in appdetails payload")
 
 
 def cheapshark_search_thumb(name):

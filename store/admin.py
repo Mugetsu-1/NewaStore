@@ -24,8 +24,8 @@ class ProductImageInline(admin.TabularInline):
     readonly_fields = ['image_preview']
 
     def image_preview(self, obj):
-        if obj and obj.src_url:
-            return format_html('<img src="{}" style="max-height: 50px;" />', obj.src_url)
+        if obj and obj.thumbnail_url:
+            return format_html('<img src="{}" style="max-height: 50px;" />', obj.thumbnail_url)
         return '-'
     image_preview.short_description = 'Preview'
 
@@ -126,8 +126,8 @@ class ProductAdmin(admin.ModelAdmin):
     def image_thumbnail(self, obj):
         images = list(obj.images.all())
         primary_image = next((i for i in images if i.is_primary), images[0] if images else None)
-        if primary_image and primary_image.src_url:
-            return format_html('<img src="{}" style="max-height: 40px;" />', primary_image.src_url)
+        if primary_image and primary_image.thumbnail_url:
+            return format_html('<img src="{}" style="max-height: 40px;" />', primary_image.thumbnail_url)
         return '-'
     image_thumbnail.short_description = 'Image'
 
@@ -162,8 +162,8 @@ class ProductImageAdmin(admin.ModelAdmin):
     list_select_related = ['product']
 
     def image_preview(self, obj):
-        if obj.src_url:
-            return format_html('<img src="{}" style="max-height: 50px;" />', obj.src_url)
+        if obj.thumbnail_url:
+            return format_html('<img src="{}" style="max-height: 50px;" />', obj.thumbnail_url)
         return '-'
     image_preview.short_description = 'Preview'
 

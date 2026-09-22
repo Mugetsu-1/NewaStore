@@ -37,43 +37,94 @@ class Command(BaseCommand):
         limit = options["limit"]
         workers = max(1, options["workers"])
         timeout = options["timeout"]
+        verbosity = options["verbosity"]
 
-        qs = (ProductImage.objects.exclude(external_url="").filter(thumbnail="")
-              .order_by("id"))
+        # Read every target once, up front, on the main thread. Workers get
+        # plain tuples (id, product_id, external_url, appid) and never touch the
+        # ORM, so the whole sweep uses exactly one database connection no matter
+        # how many workers run - the fix for "too many clients"/"remaining
+        # connection slots" exhaustion when connections were thread-local.
+        qs = (ProductImage.objects.exclude(external_url="")
+              .filter(thumbnail="", art_unavailable=False)
+              .select_related("product")
+              .order_by("id")
+              .values_list("id", "product_id", "external_url",
+                           "product__steam_app_id"))
         if limit:
             qs = qs[:limit]
-        targets = list(qs.values_list("id", flat=True))
+        targets = list(qs)
         total = len(targets)
         if not total:
             self.stdout.write(self.style.SUCCESS(
                 "Nothing to materialize - every image already has a local thumbnail."))
             return
-        self.stdout.write(f"Materializing {total:,} thumbnail(s) with {workers} workers...")
+        self.stdout.write(
+            f"Materializing {total:,} thumbnail(s) with {workers} download "
+            "worker(s); DB writes stay on the main thread (1 connection)...")
 
-        ok = failed = 0
+        ok = failed = unavailable = 0
+        dead_pks = []
         started = time.time()
 
-        def run(pk):
-            row = ProductImage.objects.only("id", "product_id", "external_url").get(pk=pk)
-            return artwork.materialize_row(row, timeout=timeout)
+        def fetch(target):
+            """Worker: network + CPU only. Returns (target, webp_bytes, url)."""
+            pk, product_id, external_url, appid = target
+            webp, url = artwork.fetch_thumbnail(
+                external_url, appid=appid, timeout=timeout)
+            return target, webp, url
 
         with futures.ThreadPoolExecutor(max_workers=workers) as pool:
-            pending = {pool.submit(run, pk): pk for pk in targets}
+            pending = {pool.submit(fetch, t): t for t in targets}
             for fut in futures.as_completed(pending):
+                pk, product_id, external_url, _appid = pending[fut]
                 try:
-                    if fut.result():
-                        ok += 1
-                    else:
-                        failed += 1  # no external_url (should not happen here)
+                    (_t, webp, url) = fut.result()
+                except artwork.ArtworkUnavailable:
+                    # Source confirms no art exists (delisted app). Mark the row
+                    # so future boots skip it instead of re-probing a dead appid
+                    # every time - this is what keeps boots fast and quiet.
+                    unavailable += 1
+                    dead_pks.append(pk)
+                    continue
                 except artwork.ArtworkError as exc:
                     failed += 1
-                    self.stderr.write(f"  [{pending[fut]}] {exc}")
+                    # A transient miss (404/403/timeout/rate-limit) is expected
+                    # for the long tail and retryable, so keep it out of the boot
+                    # log. Use -v2 to see every per-row miss.
+                    if verbosity >= 2:
+                        self.stderr.write(f"  [{pk}] {exc}")
+                    continue
                 except Exception as exc:  # noqa: BLE001 - keep the sweep going
                     failed += 1
-                    self.stderr.write(f"  [{pending[fut]}] {type(exc).__name__}: {exc}")
+                    if verbosity >= 2:
+                        self.stderr.write(f"  [{pk}] {type(exc).__name__}: {exc}")
+                    continue
+                if webp is None:
+                    failed += 1  # no URL/appid (should not happen here)
+                    continue
+                # --- single-threaded DB write (main thread only) -------------
+                try:
+                    row = ProductImage(id=pk, product_id=product_id)
+                    name = artwork.save_thumbnail(row, webp, save=False)
+                    fields = {"thumbnail": name}
+                    if url != external_url:
+                        fields["external_url"] = url
+                    ProductImage.objects.filter(pk=pk).update(**fields)
+                    ok += 1
+                except Exception as exc:  # noqa: BLE001
+                    failed += 1
+                    self.stderr.write(f"  [{pk}] save failed: {type(exc).__name__}: {exc}")
 
-        remaining = (ProductImage.objects.exclude(external_url="").filter(thumbnail="")
-                     .count())
-        self.stdout.write(self.style.SUCCESS(
-            f"Done in {time.time() - started:.0f}s: materialized={ok:,} "
-            f"failed={failed:,} - {remaining:,} row(s) still to go."))
+        if dead_pks:
+            # One main-thread write: flag the confirmed-delisted rows so the
+            # pending query (here and in ensure_ready) skips them for good.
+            ProductImage.objects.filter(pk__in=dead_pks).update(art_unavailable=True)
+
+        remaining = (ProductImage.objects.exclude(external_url="")
+                     .filter(thumbnail="", art_unavailable=False).count())
+        summary = (f"Done in {time.time() - started:.0f}s: materialized={ok:,} "
+                   f"unavailable={unavailable:,} (delisted, won't retry) "
+                   f"failed={failed:,} - {remaining:,} retryable row(s) still to go.")
+        if failed and verbosity < 2:
+            summary += " (transient misses are expected; -v2 lists each)."
+        self.stdout.write(self.style.SUCCESS(summary))

@@ -169,6 +169,11 @@ class ProductImage(models.Model):
                                   help_text="Generated card thumbnail (WebP). "
                                             "Materialized from external_url by "
                                             "'materialize_images'.")
+    art_unavailable = models.BooleanField(
+        default=False,
+        help_text="Set when every artwork source (Steam CDN + appdetails) "
+                  "confirms no image exists (delisted app). The fetch pipeline "
+                  "then stops retrying this row, so boots stay fast and quiet.")
     alt_text = models.CharField(max_length=200, blank=True)
     is_primary = models.BooleanField(default=False)
     sort_order = models.IntegerField(default=0)
@@ -199,6 +204,23 @@ class ProductImage(models.Model):
         if self.thumbnail:
             return self.thumbnail.url
         return self.src_url
+
+    @property
+    def card_image_url(self):
+        """Local-only card art: the materialized WebP or locally-stored file; '' otherwise.
+
+        Unlike :attr:`thumbnail_url`, this NEVER falls back to a hotlinked
+        external URL. Listing/grid templates use it so an un-materialized row
+        renders the local placeholder *instantly* instead of hanging the browser
+        ~1s on a dead Steam CDN request before the onerror handler fires. Once
+        'materialize_images' localizes every row this returns the WebP for all
+        of them, so grids never touch a third-party CDN at request time.
+        """
+        if self.thumbnail:
+            return self.thumbnail.url
+        if self.image:
+            return self.image.url
+        return ''
 
     def save(self, *args, **kwargs):
         if self.is_primary:

@@ -97,6 +97,7 @@ class Command(BaseCommand):
         limit = options["limit"]
         workers = max(1, options["workers"])
         skip_cs = options["skip_cheapshark"]
+        verbosity = options["verbosity"]
         started = time.time()
 
         missing = Product.objects.filter(
@@ -138,7 +139,8 @@ class Command(BaseCommand):
                     url = fut.result()
                 except Exception as exc:  # noqa: BLE001
                     stats["failed"] += 1
-                    self.stderr.write(f"  steam probe error id={pid}: {exc}")
+                    if verbosity >= 2:
+                        self.stderr.write(f"  steam probe error id={pid}: {exc}")
                     continue
                 if url:
                     self._save(Product.objects.get(pk=pid), url, stats)
@@ -164,9 +166,11 @@ class Command(BaseCommand):
                             if thumb:
                                 cs_thumbs[f"CS-{gid}"] = thumb
                     else:
-                        self.stderr.write(f"  cheapshark HTTP {r.status_code} at batch {i}")
+                        if verbosity >= 2:
+                            self.stderr.write(f"  cheapshark HTTP {r.status_code} at batch {i}")
                 except Exception as exc:  # noqa: BLE001
-                    self.stderr.write(f"  cheapshark error at batch {i}: {exc}")
+                    if verbosity >= 2:
+                        self.stderr.write(f"  cheapshark error at batch {i}: {exc}")
                 time.sleep(1.2)  # stay polite with the API
 
             self.stdout.write(

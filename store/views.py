@@ -37,6 +37,7 @@ from .forms import (
     ProductSearchForm, OrderStatusUpdateForm,
 )
 from .cart import CartManager
+from .recommendations import recommend_for_product
 from .utils import (
     calculate_tax, send_order_confirmation, send_order_status_update,
     build_invoice_pdf, get_client_ip, send_templated_email,
@@ -252,9 +253,9 @@ def product_detail(request, slug):
     variants = product.variants.filter(is_active=True)
     reviews = product.reviews.filter(is_approved=True).select_related('user')
 
-    related = Product.objects.filter(is_active=True, category=product.category).exclude(pk=product.pk)[:4]
-    if not related:
-        related = Product.objects.filter(is_active=True).exclude(pk=product.pk)[:4]
+    # Content-based recommendations (CSC381 Lab 4 / report Ch.7): ranked by
+    # weighted genre/category/rating/price similarity, each with a match reason.
+    related = recommend_for_product(product, limit=4)
 
     user_review = None
     in_wishlist = False

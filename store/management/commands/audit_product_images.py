@@ -85,6 +85,7 @@ class Command(BaseCommand):
         limit = options["limit"]
         workers = max(1, options["workers"])
         after_id = options["after_id"]
+        verbosity = options["verbosity"]
 
         qs = ProductImage.objects.exclude(external_url="").filter(id__gt=after_id).order_by("id")
         if limit:
@@ -118,7 +119,8 @@ class Command(BaseCommand):
                     _, new_url = fut.result()
                 except Exception as exc:
                     failed += 1
-                    self.stderr.write(f"  probe error id={img_id}: {exc}")
+                    if verbosity >= 2:
+                        self.stderr.write(f"  probe error id={img_id}: {exc}")
                     continue
                 checked += 1
                 if new_url is None:

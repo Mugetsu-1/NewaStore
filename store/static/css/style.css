@@ -489,6 +489,11 @@ table.data tr:hover td { background:var(--surface-2); }
 .product-genres .genre-chip { padding:3px 10px; font-size:.7rem; }
 .product-genres .genre-chip:hover { transform:none; }
 
+/* Content-based recommendation "why" badge (report Ch.7) */
+.rec-reason { display:inline-flex; align-items:center; gap:5px; margin-bottom:8px; padding:2px 9px; border-radius:999px; background:rgba(190,238,17,.1); border:1px solid rgba(190,238,17,.32); color:#a8cf14; font-size:.68rem; font-weight:700; letter-spacing:.01em; }
+.rec-reason i { font-size:.62rem; }
+[data-theme="light"] .rec-reason { background:rgba(76,107,34,.1); border-color:rgba(76,107,34,.3); color:#4c6b22; }
+
 /* ---------- Steam-style discount tag ---------- */
 .discount-tag { display:inline-flex; align-items:center; justify-content:center; background:#4c6b22; color:#beee11; font-weight:800; font-size:.8rem; padding:4px 9px; border-radius:6px; letter-spacing:.02em; }
 .discount-tag-lg { font-size:1.05rem; padding:6px 13px; border-radius:8px; }

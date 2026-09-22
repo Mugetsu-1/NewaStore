@@ -4,7 +4,7 @@
         {% for item in cart.items.all %}
         <div class="drawer-item">
             {% with img=item.product.images.first %}
-            <img src="{% if img and img.thumbnail_url %}{{ img.thumbnail_url }}{% else %}{% static 'images/placeholder.svg' %}{% endif %}" alt="{{ item.product.name }}" onerror="this.onerror=null;this.src='{% static 'images/placeholder.svg' %}'">
+            <img src="{% if img and img.card_image_url %}{{ img.card_image_url }}{% else %}{% static 'images/placeholder.svg' %}{% endif %}" alt="{{ item.product.name }}" onerror="this.onerror=null;this.src='{% static 'images/placeholder.svg' %}'">
             {% endwith %}
             <div style="flex:1">
                 <div style="font-weight:600;font-size:.88rem">{{ item.product.name }}</div>
