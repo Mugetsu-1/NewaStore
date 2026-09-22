@@ -408,7 +408,11 @@ table.data tr:hover td { background:var(--surface-2); }
 .filter-block { padding:16px 0; border-bottom:1px solid var(--border); }
 .filter-block:last-child { border-bottom:none; }
 .filter-block h4 { font-size:.9rem; margin-bottom:14px; }
-.filter-list { display:flex; flex-direction:column; gap:9px; max-height:240px; overflow-y:auto; }
+.filter-list { display:flex; flex-direction:column; gap:9px; max-height:240px; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; scrollbar-color:var(--border) transparent; padding-right:6px; }
+.filter-list::-webkit-scrollbar { width:8px; }
+.filter-list::-webkit-scrollbar-track { background:transparent; }
+.filter-list::-webkit-scrollbar-thumb { background:var(--border); border-radius:999px; }
+.filter-list::-webkit-scrollbar-thumb:hover { background:var(--text-muted); }
 .filter-list label { display:flex; align-items:center; gap:9px; font-size:.88rem; color:var(--text-muted); cursor:pointer; }
 .filter-list input { accent-color:var(--primary); }
 
@@ -472,6 +476,33 @@ table.data tr:hover td { background:var(--surface-2); }
 .hero-price { display:flex; align-items:center; gap:14px; background:rgba(11,15,20,.78); border:1px solid var(--border); padding:10px 20px; border-radius:var(--radius); backdrop-filter:blur(6px); }
 .hero-price .price-current { font-size:1.5rem; }
 .hero-game .hero-dots { padding:18px 0 22px; }
+
+/* ---------- Dynamic live hero (data-driven, animated cover collage) ---------- */
+.hero-live { position:relative; overflow:hidden; }
+.hero-live-glow { position:absolute; top:-30%; right:-10%; width:60%; height:120%; background:radial-gradient(closest-side, rgba(34,197,94,.16), transparent 70%); pointer-events:none; z-index:0; }
+.hero-live-inner { position:relative; z-index:1; display:grid; grid-template-columns:1.05fr .95fr; gap:48px; align-items:center; padding:64px 0; }
+.hero-live-copy h1 { margin-bottom:16px; }
+.hero-search { display:flex; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--border); border-radius:999px; padding:6px 6px 6px 18px; max-width:480px; margin:0 0 22px; transition:border-color var(--transition); }
+.hero-search:focus-within { border-color:var(--primary); }
+.hero-search i { color:var(--text-muted); }
+.hero-search input { flex:1; min-width:0; border:none; background:transparent; color:var(--text); outline:none; font-size:.95rem; }
+.hero-search .btn { border-radius:999px; padding:10px 22px; white-space:nowrap; }
+.hero-stats { display:flex; gap:34px; margin-top:32px; }
+.hero-stat strong { display:block; font-size:1.7rem; font-weight:800; line-height:1.1; color:var(--text); }
+.hero-stat span { font-size:.76rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:.05em; }
+.hero-collage { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; height:460px; overflow:hidden; -webkit-mask-image:linear-gradient(180deg,transparent,#000 14%,#000 86%,transparent); mask-image:linear-gradient(180deg,transparent,#000 14%,#000 86%,transparent); }
+.hero-collage-col { overflow:hidden; }
+.hero-collage-track { display:flex; flex-direction:column; gap:16px; will-change:transform; animation:heroScrollUp 40s linear infinite; }
+.hero-collage-col:nth-child(2) .hero-collage-track { animation:heroScrollDown 52s linear infinite; }
+.hero-collage-col:nth-child(3) .hero-collage-track { animation:heroScrollUp 46s linear infinite; }
+.hero-collage:hover .hero-collage-track { animation-play-state:paused; }
+.hero-cover { display:block; width:100%; aspect-ratio:16/9; border-radius:12px; background:var(--surface) center/cover no-repeat; border:1px solid rgba(255,255,255,.08); box-shadow:0 10px 26px rgba(0,0,0,.4); }
+@keyframes heroScrollUp { from { transform:translateY(0); } to { transform:translateY(-50%); } }
+@keyframes heroScrollDown { from { transform:translateY(-50%); } to { transform:translateY(0); } }
+@media (max-width:960px) {
+  .hero-live-inner { grid-template-columns:1fr; padding:44px 0; }
+  .hero-collage { display:none; }
+}
 
 /* ---------- Line clamp fallback (matches Tailwind) ---------- */
 .line-clamp-2 { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
@@ -537,6 +568,7 @@ main { animation: pageFadeIn .32s ease both; }
     main { animation: none; }
     .cart-count.pop { animation: none; }
     .skeleton-card .sk-media, .skeleton-card .sk-line { animation: none; }
+    .hero-collage-track { animation: none; }
 }
 
 /* Cart badge pop whenever the count changes */

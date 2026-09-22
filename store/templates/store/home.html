@@ -49,21 +49,42 @@
     </div>
 </section>
 {% else %}
-<!-- Hero fallback (empty store) -->
-<section class="hero">
+<!-- Dynamic live hero: real catalog stats + animated cover-art collage (local WebP only) -->
+<section class="hero hero-live">
+    <div class="hero-live-glow"></div>
     <div class="container">
-        <div class="hero-inner">
-            <div>
+        <div class="hero-live-inner">
+            <div class="hero-live-copy">
                 <span class="hero-tag"><i class="fas fa-gamepad"></i> Digital Game Store</span>
                 <h1>Real Games. <span>Real Prices.</span></h1>
                 <p>Thousands of digital PC game keys with live international price data — delivered instantly to your inbox.</p>
+                <form class="hero-search" method="get" action="{% url 'product_list' %}" role="search">
+                    <i class="fas fa-search"></i>
+                    <input type="text" name="q" placeholder="Search {{ hero_stats.games }} games…" aria-label="Search games">
+                    <button type="submit" class="btn btn-primary">Search</button>
+                </form>
                 <div class="hero-actions">
                     <a href="{% url 'product_list' %}" class="btn btn-primary btn-lg"><i class="fas fa-shopping-bag"></i> Browse Store</a>
+                    <a href="{% url 'product_list' %}?on_sale_only=1" class="btn btn-ghost btn-lg"><i class="fas fa-fire"></i> Shop Deals</a>
+                </div>
+                <div class="hero-stats">
+                    <div class="hero-stat"><strong>{{ hero_stats.games }}</strong><span>Games</span></div>
+                    <div class="hero-stat"><strong>{{ hero_stats.deals }}</strong><span>Live Deals</span></div>
+                    <div class="hero-stat"><strong>{{ hero_stats.genres }}</strong><span>Genres</span></div>
                 </div>
             </div>
-            <div class="hero-image">
-                <img src="{% static 'images/hero.svg' %}" alt="Featured games">
+            {% if hero_collage %}
+            <div class="hero-collage" aria-hidden="true">
+                {% for col in hero_collage %}
+                <div class="hero-collage-col">
+                    <div class="hero-collage-track">
+                        {% for art in col %}<span class="hero-cover" style="background-image:url('{{ art }}')"></span>{% endfor %}
+                        {% for art in col %}<span class="hero-cover" style="background-image:url('{{ art }}')"></span>{% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
             </div>
+            {% endif %}
         </div>
     </div>
 </section>

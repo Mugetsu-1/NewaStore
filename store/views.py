@@ -86,9 +86,29 @@ def home(request):
         product_count=Count('products', filter=Q(products__is_active=True))
     ).filter(product_count__gt=0).order_by('-product_count')[:12]
 
+    # Dynamic hero: live catalog stats + a collage of REAL local cover art.
+    # card_image_url is local-only (WebP/local file, never a hotlinked CDN URL)
+    # per the artwork pipeline invariants, so the hero never hangs on a dead
+    # Steam link. 24 covers split across 3 marquee columns.
+    hero_covers = [
+        img.card_image_url
+        for img in (ProductImage.objects.filter(product__is_active=True)
+                    .exclude(thumbnail='').only('thumbnail', 'image')
+                    .order_by('-id')[:24])
+        if img.card_image_url
+    ]
+    hero_collage = [hero_covers[i::3] for i in range(3)] if len(hero_covers) >= 6 else []
+    hero_stats = {
+        'games': f"{products.count():,}",
+        'deals': f"{products.filter(discount_price__isnull=False).count():,}",
+        'genres': f"{Tag.objects.filter(products__is_active=True).distinct().count():,}",
+    }
+
     context = {
         'featured_products': featured,
         'hero_slides': hero_slides,
+        'hero_collage': hero_collage,
+        'hero_stats': hero_stats,
         'new_arrivals': new_arrivals,
         'deal_products': deals,
         'categories': categories,
