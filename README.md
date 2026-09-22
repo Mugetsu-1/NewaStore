@@ -317,3 +317,4 @@ against a development or staging database.
 7. Add WhiteNoise (already in `requirements.txt`) or a reverse proxy for static/media.
 8. Run `python manage.py collectstatic`.
 9. Serve behind HTTPS (security settings auto-enable when `DEBUG=False`).
+ Gaming Store
