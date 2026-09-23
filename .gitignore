@@ -50,3 +50,6 @@ steamspy_progress*
 build/
 dist/
 pip-wheel-metadata/
+
+# Database dumps
+*.sql
