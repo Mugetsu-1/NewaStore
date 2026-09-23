@@ -33,6 +33,7 @@ db.sqlite3-journal
 # IDE / OS
 .idea/
 .vscode/
+.claude/
 *.swp
 .DS_Store
 Thumbs.db
