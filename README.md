@@ -12,7 +12,7 @@ customized admin dashboard, and a test suite.
 > Review the production checklist and replace every development credential
 > before deploying it publicly.
 
-## Contents
+## Contents:
 
 - [Features](#features)
 - [Quick Start](#quick-start)
