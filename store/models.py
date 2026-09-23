@@ -3,6 +3,7 @@ from django.contrib.auth.models import User
 from django.urls import reverse
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils.text import slugify
+from django.conf import settings
 import uuid
 
 
@@ -203,7 +204,13 @@ class ProductImage(models.Model):
 
         Templates listing many products should use this so grids are served
         from our own media once 'materialize_images' has processed the row.
+
+        When SERVE_REMOTE_ARTWORK is set (hosted deploys with no persistent
+        media disk) the hotlinked external URL takes precedence, so cover art
+        loads straight from the source CDN instead of a missing local file.
         """
+        if getattr(settings, 'SERVE_REMOTE_ARTWORK', False) and self.external_url:
+            return self.external_url
         if self.thumbnail:
             return self.thumbnail.url
         return self.src_url
@@ -218,7 +225,14 @@ class ProductImage(models.Model):
         ~1s on a dead Steam CDN request before the onerror handler fires. Once
         'materialize_images' localizes every row this returns the WebP for all
         of them, so grids never touch a third-party CDN at request time.
+
+        Exception: when SERVE_REMOTE_ARTWORK is set (hosted deploys with no
+        persistent media disk, where the local WebP files do not exist) the
+        external URL is used so grids show real cover art instead of the
+        placeholder. Leave it unset locally to keep the instant local-only path.
         """
+        if getattr(settings, 'SERVE_REMOTE_ARTWORK', False) and self.external_url:
+            return self.external_url
         if self.thumbnail:
             return self.thumbnail.url
         if self.image:

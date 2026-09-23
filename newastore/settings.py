@@ -131,6 +131,8 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 ARTWORK_THUMB_WIDTH = int(os.environ.get('ARTWORK_THUMB_WIDTH', 616))
 ARTWORK_WEBP_QUALITY = int(os.environ.get('ARTWORK_WEBP_QUALITY', 82))
 
+SERVE_REMOTE_ARTWORK = os.environ.get('SERVE_REMOTE_ARTWORK', 'False') == 'True'
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 LOGIN_URL = 'login'

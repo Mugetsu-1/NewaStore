@@ -12,6 +12,8 @@ services:
         value: "3.13.7"
       - key: DJANGO_DEBUG
         value: "False"
+      - key: SERVE_REMOTE_ARTWORK
+        value: "True"
       - key: DJANGO_SECRET_KEY
         generateValue: true
       - key: DJANGO_ALLOWED_HOSTS
