@@ -138,9 +138,9 @@
                 {% if discount %}
                 <div class="summary-row" style="color:var(--primary)"><span>Discount ({{ cart.coupon.code }})</span><span>-{{ currency_symbol }} {{ discount|floatformat:2 }}</span></div>
                 {% endif %}
-                <div class="summary-row"><span>Tax ({{ site_settings.tax_rate|floatformat:0 }}%)</span><span>Calculated on next step</span></div>
+                <div class="summary-row"><span>Tax ({{ site_settings.tax_rate|floatformat:0 }}%)</span><span>{{ currency_symbol }} {{ tax|floatformat:2 }}</span></div>
                 <div class="summary-row"><span>Delivery</span><span>Free — digital</span></div>
-                <div class="summary-row total"><span>Total</span><span class="val">{{ currency_symbol }} {{ cart.total|floatformat:2 }}</span></div>
+                <div class="summary-row total"><span>Total</span><span class="val">{{ currency_symbol }} {{ total|floatformat:2 }}</span></div>
                 <button type="submit" class="btn btn-primary btn-block btn-lg mt-3">
                     <i class="fas fa-lock"></i> Place Order
                 </button>

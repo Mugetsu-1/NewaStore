@@ -1,9 +1,12 @@
 from decimal import Decimal
+import base64
 import io
 import json
 from io import StringIO
+from unittest import mock
 
-from django.test import TestCase, Client
+from django.conf import settings
+from django.test import TestCase, Client, override_settings
 from django.contrib.auth.models import User
 from django.core import mail
 from django.urls import reverse
@@ -378,23 +381,44 @@ class PaymentFulfillmentTests(TestCase):
         self.assertEqual(OrderStatusHistory.objects.filter(order=order).count(), 1)
         self.assertEqual(len(mail.outbox), 2)
 
-    def test_stripe_webhook_fulfills_order(self):
+    def test_stripe_webhook_rejects_unsigned_when_no_secret(self):
+        """Fail-closed: with no STRIPE_WEBHOOK_SECRET set, forged events are refused."""
         order = self._make_order()
         payload = json.dumps({
             'type': 'payment_intent.succeeded',
             'data': {'object': {'id': 'pi_wh_1', 'metadata': {'order_number': order.order_number}}},
         })
-        response = self.client.post(reverse('stripe_webhook'), payload, content_type='application/json')
+        with override_settings(STRIPE_WEBHOOK_SECRET=''):
+            response = self.client.post(reverse('stripe_webhook'), payload, content_type='application/json')
+        self.assertEqual(response.status_code, 503)
+        order.refresh_from_db()
+        self.assertNotEqual(order.payment_status, 'paid')
+
+    @override_settings(STRIPE_WEBHOOK_SECRET='whsec_test', STRIPE_SECRET_KEY='sk_test_x')
+    def test_stripe_webhook_fulfills_signed_event(self):
+        order = self._make_order()
+        event = {
+            'type': 'payment_intent.succeeded',
+            'data': {'object': {'id': 'pi_wh_1', 'metadata': {'order_number': order.order_number}}},
+        }
+        with mock.patch('stripe.Webhook.construct_event', return_value=event):
+            response = self.client.post(
+                reverse('stripe_webhook'), json.dumps(event),
+                content_type='application/json', HTTP_STRIPE_SIGNATURE='t=1,v1=sig')
         self.assertEqual(response.status_code, 200)
         order.refresh_from_db()
         self.assertEqual(order.payment_status, 'paid')
         self.assertEqual(order.payment_transaction_id, 'pi_wh_1')
 
-    def test_stripe_webhook_rejects_bad_payload(self):
-        response = self.client.post(reverse('stripe_webhook'), 'not-json', content_type='application/json')
+    @override_settings(STRIPE_WEBHOOK_SECRET='whsec_test', STRIPE_SECRET_KEY='sk_test_x')
+    def test_stripe_webhook_rejects_bad_signature(self):
+        with mock.patch('stripe.Webhook.construct_event', side_effect=ValueError('bad sig')):
+            response = self.client.post(
+                reverse('stripe_webhook'), 'not-json', content_type='application/json')
         self.assertEqual(response.status_code, 400)
 
-    def test_paypal_webhook_fulfills_order(self):
+    def test_paypal_webhook_rejects_unverified(self):
+        """Fail-closed: an unverifiable PayPal event never fulfills an order."""
         order = self._make_order(payment_method='paypal')
         payload = json.dumps({
             'event_type': 'PAYMENT.CAPTURE.COMPLETED',
@@ -404,6 +428,21 @@ class PaymentFulfillmentTests(TestCase):
             },
         })
         response = self.client.post(reverse('paypal_webhook'), payload, content_type='application/json')
+        self.assertEqual(response.status_code, 400)
+        order.refresh_from_db()
+        self.assertNotEqual(order.payment_status, 'paid')
+
+    def test_paypal_webhook_fulfills_verified_event(self):
+        order = self._make_order(payment_method='paypal')
+        payload = json.dumps({
+            'event_type': 'PAYMENT.CAPTURE.COMPLETED',
+            'resource': {
+                'id': 'CAP-123',
+                'supplementary_data': {'related_ids': {'order_id': order.order_number}},
+            },
+        })
+        with mock.patch('store.views._verify_paypal_webhook', return_value=True):
+            response = self.client.post(reverse('paypal_webhook'), payload, content_type='application/json')
         self.assertEqual(response.status_code, 200)
         order.refresh_from_db()
         self.assertEqual(order.payment_status, 'paid')
@@ -609,11 +648,12 @@ class ApiTests(TestCase):
         response = self.client.post(reverse('api_contact'), {'email': 'not-an-email'})
         self.assertEqual(response.status_code, 400)
         self.assertFalse(response.json()['success'])
-class SimulatedGatewayTests(TestCase):
-    """eSewa/Khalti are demo wallets (local simulation); Nay Bank is offline.
+class RealGatewayTests(TestCase):
+    """eSewa/Khalti hit their real sandbox APIs; Nay Bank settles offline.
 
-    Nothing may contact an external provider: checkout has to render a local
-    page, and only the local "simulate" endpoint may flip an order to paid.
+    Fulfillment is gated on server-side verification: eSewa needs a valid HMAC
+    signature over the returned fields and a matching amount, and Khalti needs
+    an authoritative lookup — a forged callback must never mark an order paid.
     """
 
     def setUp(self):
@@ -638,94 +678,106 @@ class SimulatedGatewayTests(TestCase):
         return self.client.post(reverse('checkout'), payload)
 
 
-    def test_checkout_offers_simulated_wallets_and_nay_bank(self):
+    def test_checkout_offers_wallets_and_nay_bank(self):
         self.client.login(username='sim_buyer', password='pass12345')
         self.client.post(reverse('add_to_cart', args=[self.product.id]), {'quantity': 1})
         html = self.client.get(reverse('checkout')).content.decode()
         self.assertIn('value="esewa"', html)
-        self.assertIn('value="khalti"', html)
         self.assertIn('value="nay_bank"', html)
-        self.assertIn('eSewa (Simulated)', html)
-        self.assertIn('Khalti (Simulated)', html)
+        self.assertIn('eSewa', html)
         self.assertIn('Nay Bank Transfer', html)
+        self.assertNotIn('Simulated', html)
 
 
-    def test_esewa_checkout_renders_local_page_instead_of_redirect(self):
-        response = self._start_checkout('esewa')
+    def test_esewa_checkout_posts_signed_form_to_real_gateway(self):
+        redirect_resp = self._start_checkout('esewa')
+        order = Order.objects.get()
+        self.assertRedirects(
+            redirect_resp, reverse('esewa_checkout', args=[order.order_number]),
+            fetch_redirect_response=False)
+        response = self.client.get(reverse('esewa_checkout', args=[order.order_number]))
         self.assertEqual(response.status_code, 200)
         html = response.content.decode()
-        self.assertIn('Simulated payment', html)
-        self.assertIn('eSewa', html)
-        self.assertNotIn('esewa.com.np', html)
-        order = Order.objects.get()
+        self.assertIn(settings.ESEWA_FORM_URL, html)
+        self.assertIn('name="signature"', html)
+        self.assertIn('name="transaction_uuid"', html)
         self.assertEqual(order.payment_method, 'esewa')
         self.assertEqual(order.payment_status, 'pending')
         self.assertFalse(order.is_paid)
 
-    def test_khalti_checkout_renders_local_page_instead_of_redirect(self):
-        response = self._start_checkout('khalti')
-        self.assertEqual(response.status_code, 200)
-        html = response.content.decode()
-        self.assertIn('Simulated payment', html)
-        self.assertIn('Khalti', html)
-        self.assertNotIn('khalti.com', html)
-        order = Order.objects.get()
-        self.assertEqual(order.payment_method, 'khalti')
-        self.assertFalse(order.is_paid)
+    def test_khalti_checkout_disabled_when_unconfigured(self):
+        """With no Khalti secret set, khalti is not even an offered choice."""
+        self.client.login(username='sim_buyer', password='pass12345')
+        self.client.post(reverse('add_to_cart', args=[self.product.id]), {'quantity': 1})
+        html = self.client.get(reverse('checkout')).content.decode()
+        self.assertNotIn('value="khalti"', html)
 
-    def test_simulated_success_marks_order_paid(self):
+    def _signed_esewa_data(self, order, status='COMPLETE', amount=None):
+        from store.payments import _esewa_signature
+        amount = f'{order.total:.2f}' if amount is None else amount
+        fields = {
+            'transaction_code': '000TESTCODE',
+            'status': status,
+            'total_amount': amount,
+            'transaction_uuid': order.order_number,
+            'product_code': settings.ESEWA_PRODUCT_CODE,
+            'signed_field_names':
+                'transaction_code,status,total_amount,transaction_uuid,product_code,signed_field_names',
+        }
+        names = fields['signed_field_names'].split(',')
+        message = ','.join(f'{n}={fields[n]}' for n in names)
+        fields['signature'] = _esewa_signature(message)
+        return base64.b64encode(json.dumps(fields).encode()).decode()
+
+    def test_esewa_verify_marks_paid_on_valid_signature(self):
         self._start_checkout('esewa')
         order = Order.objects.get()
-        response = self.client.post(
-            reverse('simulate_payment', args=[order.order_number, 'esewa']),
-            {'outcome': 'success'})
+        data = self._signed_esewa_data(order)
+        response = self.client.get(reverse('esewa_verify'), {'data': data})
         self.assertRedirects(
             response, reverse('order_success', args=[order.order_number]),
             fetch_redirect_response=False)
         order.refresh_from_db()
         self.assertEqual(order.payment_status, 'paid')
         self.assertEqual(order.status, 'confirmed')
-        self.assertTrue(order.is_paid)
-        self.assertTrue(order.payment_transaction_id.startswith('SIM-'))
         self.assertIsNotNone(order.confirmed_at)
 
-    def test_simulated_failure_marks_order_failed(self):
-        self._start_checkout('khalti')
+    def test_esewa_verify_rejects_forged_signature(self):
+        self._start_checkout('esewa')
         order = Order.objects.get()
-        response = self.client.post(
-            reverse('simulate_payment', args=[order.order_number, 'khalti']),
-            {'outcome': 'failure'})
+        data = self._signed_esewa_data(order)
+        tampered = json.loads(base64.b64decode(data))
+        tampered['total_amount'] = '1.00'
+        forged = base64.b64encode(json.dumps(tampered).encode()).decode()
+        response = self.client.get(reverse('esewa_verify'), {'data': forged})
         self.assertRedirects(
             response, reverse('payment_failed', args=[order.order_number]),
             fetch_redirect_response=False)
         order.refresh_from_db()
-        self.assertEqual(order.payment_status, 'failed')
-        self.assertFalse(order.is_paid)
+        self.assertNotEqual(order.payment_status, 'paid')
 
-    def test_simulation_is_idempotent_on_already_paid_order(self):
-        """A late 'declined' click must not un-pay a settled order."""
+    def test_esewa_verify_is_idempotent_on_paid_order(self):
         self._start_checkout('esewa')
         order = Order.objects.get()
-        url = reverse('simulate_payment', args=[order.order_number, 'esewa'])
-        self.client.post(url, {'outcome': 'success'})
-        self.client.post(url, {'outcome': 'failure'})
+        data = self._signed_esewa_data(order)
+        self.client.get(reverse('esewa_verify'), {'data': data})
+        self.client.get(reverse('esewa_verify'), {'data': data})
         order.refresh_from_db()
         self.assertEqual(order.payment_status, 'paid')
 
-    def test_simulate_payment_404s_for_unknown_gateway(self):
-        order = Order.objects.create(subtotal=Decimal('100'), total=Decimal('100'))
-        response = self.client.get(
-            reverse('simulate_payment', args=[order.order_number, 'stripe']))
-        self.assertEqual(response.status_code, 404)
-
-    def test_simulated_gateway_page_references_no_external_hosts(self):
-        """Belt and braces: the demo page must not point at any gateway host."""
+    def test_khalti_verify_ignores_forged_querystring(self):
+        """A hand-crafted ?status=Completed must not settle the order."""
         self._start_checkout('esewa')
         order = Order.objects.get()
-        html = self.client.get(
-            reverse('simulate_payment', args=[order.order_number, 'esewa'])).content.decode()
-        for host in ('esewa.com.np', 'khalti.com', 'js.stripe.com', 'paypal.com'):
-            self.assertNotIn(host, html)
+        response = self.client.get(reverse('khalti_verify'), {
+            'purchase_order_id': order.order_number,
+            'status': 'Completed', 'transaction_id': 'FORGED',
+        })
+        self.assertRedirects(
+            response, reverse('payment_failed', args=[order.order_number]),
+            fetch_redirect_response=False)
+        order.refresh_from_db()
+        self.assertNotEqual(order.payment_status, 'paid')
 
 
     def test_nay_bank_order_stays_pending_and_shows_account_details(self):

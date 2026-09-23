@@ -81,16 +81,6 @@
         </div>
         {% endif %}
 
-        {% if is_simulated and not order.is_paid %}
-        <div class="checkout-section" style="text-align:left;border-left:4px solid #f59e0b">
-            <p class="text-muted" style="font-size:.85rem;margin:0">
-                <i class="fas fa-rotate-right"></i>
-                Payment was not completed.
-                <a href="{% url 'simulate_payment' order.order_number order.payment_method %}" style="color:var(--primary)">Retry the simulated payment</a>.
-            </p>
-        </div>
-        {% endif %}
-
         <div class="flex-center gap-2 mt-4" style="flex-wrap:wrap">
             {% if user.is_authenticated %}
             <a href="{% url 'order_detail' order.order_number %}" class="btn btn-primary"><i class="fas fa-box"></i> View Order</a>

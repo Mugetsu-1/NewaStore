@@ -449,7 +449,7 @@
     onScroll();
   }
 
-  const AJAX_FORMS = ['#filter-form', '#sort-form', 'form[data-newsletter]', '#coupon-form'];
+  const AJAX_FORMS = ['#filter-form', '#sort-form', 'form[data-newsletter]'];
   document.addEventListener('submit', (e) => {
     const form = e.target;
     if (!(form instanceof HTMLFormElement)) return;

@@ -1,13 +1,9 @@
 from django import forms
-from django.contrib.auth.forms import UserCreationForm, UserChangeForm, PasswordResetForm
+from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from .payments import _available_payment_method_choices
-from .models import (
-    Product, ProductImage, ProductVariant, Review, Category, Tag,
-    Coupon, Cart, CartItem, Wishlist, WishlistItem,
-    Order, OrderItem, NewsletterSubscriber, ContactMessage, SiteSettings
-)
+from .models import Review, Category, NewsletterSubscriber, ContactMessage
 
 
 class CustomRegisterForm(UserCreationForm):
@@ -61,82 +57,6 @@ class UserProfileForm(forms.ModelForm):
         return email
 
 
-class UserProfileUpdateForm(UserProfileForm):
-    class Meta(UserProfileForm.Meta):
-        fields = ['first_name', 'last_name', 'email']
-
-
-class CategoryForm(forms.ModelForm):
-    class Meta:
-        model = Category
-        fields = ['name', 'slug', 'description', 'image', 'parent', 'is_active', 'sort_order']
-        widgets = {
-            'description': forms.Textarea(attrs={'rows': 3}),
-        }
-
-
-class TagForm(forms.ModelForm):
-    class Meta:
-        model = Tag
-        fields = ['name', 'slug']
-
-
-class ProductForm(forms.ModelForm):
-    class Meta:
-        model = Product
-        fields = [
-            'name', 'slug', 'sku', 'barcode', 'category', 'tags',
-            'short_description', 'description',
-            'price', 'discount_price', 'cost_price',
-            'stock_quantity', 'low_stock_threshold', 'track_inventory', 'allow_backorder',
-            'is_active', 'is_featured', 'is_digital',
-            'meta_title', 'meta_description', 'meta_keywords',
-        ]
-        widgets = {
-            'description': forms.Textarea(attrs={'rows': 5}),
-            'short_description': forms.Textarea(attrs={'rows': 3}),
-            'meta_description': forms.Textarea(attrs={'rows': 3}),
-            'meta_keywords': forms.Textarea(attrs={'rows': 2}),
-            'tags': forms.CheckboxSelectMultiple(),
-        }
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields['tags'].queryset = Tag.objects.all()
-        self.fields['category'].queryset = Category.objects.filter(is_active=True)
-
-
-class ProductImageForm(forms.ModelForm):
-    class Meta:
-        model = ProductImage
-        fields = ['image', 'alt_text', 'is_primary', 'sort_order']
-
-
-ProductImageFormSet = forms.inlineformset_factory(
-    Product, ProductImage,
-    form=ProductImageForm,
-    extra=1,
-    can_delete=True
-)
-
-
-class ProductVariantForm(forms.ModelForm):
-    class Meta:
-        model = ProductVariant
-        fields = ['name', 'sku', 'price_adjustment', 'stock_quantity', 'is_active', 'attributes', 'sort_order']
-        widgets = {
-            'attributes': forms.Textarea(attrs={'rows': 3, 'placeholder': '{"color": "Red", "size": "M"}'}),
-        }
-
-
-ProductVariantFormSet = forms.inlineformset_factory(
-    Product, ProductVariant,
-    form=ProductVariantForm,
-    extra=1,
-    can_delete=True
-)
-
-
 class ReviewForm(forms.ModelForm):
     class Meta:
         model = Review
@@ -160,67 +80,6 @@ class ReviewForm(forms.ModelForm):
         return cleaned_data
 
 
-class CouponForm(forms.ModelForm):
-    class Meta:
-        model = Coupon
-        fields = [
-            'code', 'name', 'description', 'discount_type', 'discount_value',
-            'minimum_amount', 'maximum_discount',
-            'usage_limit', 'usage_limit_per_user',
-            'valid_from', 'valid_until', 'is_active',
-            'applicable_categories', 'applicable_products', 'excluded_products',
-        ]
-        widgets = {
-            'valid_from': forms.DateTimeInput(attrs={'type': 'datetime-local'}),
-            'valid_until': forms.DateTimeInput(attrs={'type': 'datetime-local'}),
-            'description': forms.Textarea(attrs={'rows': 3}),
-            'applicable_categories': forms.CheckboxSelectMultiple(),
-        }
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields['applicable_categories'].queryset = Category.objects.filter(is_active=True)
-        for field_name in ('applicable_products', 'excluded_products'):
-            initial_ids = list(self.initial.get(field_name, []) or [])
-            self.fields[field_name] = forms.CharField(
-                required=False,
-                label=self.fields[field_name].label,
-                help_text='Comma-separated product names or IDs',
-                initial=', '.join(str(p) for p in
-                                  Product.objects.filter(id__in=initial_ids)
-                                  .values_list('name', flat=True)) if initial_ids else '',
-            )
-
-    def _clean_product_picker(self, field_name):
-        raw = self.cleaned_data.get(field_name, '') or ''
-        picked = []
-        for token in [t.strip() for t in raw.split(',') if t.strip()]:
-            if token.isdigit():
-                product = Product.objects.filter(id=int(token)).first()
-            else:
-                product = Product.objects.filter(name__iexact=token).first()
-            if product:
-                picked.append(product)
-            else:
-                raise ValidationError(f'No product matches "{token}".')
-        return picked
-
-    def clean(self):
-        cleaned_data = super().clean()
-        cleaned_data['applicable_products'] = self._clean_product_picker('applicable_products')
-        cleaned_data['excluded_products'] = self._clean_product_picker('excluded_products')
-        return cleaned_data
-
-
-class CartItemForm(forms.ModelForm):
-    class Meta:
-        model = CartItem
-        fields = ['quantity']
-        widgets = {
-            'quantity': forms.NumberInput(attrs={'min': 1, 'max': 99, 'class': 'quantity-input'}),
-        }
-
-
 class CouponApplyForm(forms.Form):
     code = forms.CharField(max_length=50, widget=forms.TextInput(attrs={
         'placeholder': 'Enter coupon code',
@@ -240,8 +99,8 @@ class CheckoutForm(forms.Form):
     billing_country = forms.CharField(max_length=100, initial='Nepal', label='Country')
 
     PAYMENT_CHOICES = [
-        ('esewa', 'eSewa (Simulated)'),
-        ('khalti', 'Khalti (Simulated)'),
+        ('esewa', 'eSewa'),
+        ('khalti', 'Khalti'),
         ('nay_bank', 'Nay Bank Transfer'),
         ('stripe', 'Credit/Debit Card (Stripe)'),
         ('paypal', 'PayPal'),
@@ -263,15 +122,6 @@ class CheckoutForm(forms.Form):
             full_name = (self.user.get_full_name() or '').strip()
             if full_name:
                 self.fields['billing_full_name'].initial = full_name
-
-
-class OrderStatusUpdateForm(forms.ModelForm):
-    class Meta:
-        model = Order
-        fields = ['status', 'payment_status', 'internal_notes']
-        widgets = {
-            'internal_notes': forms.Textarea(attrs={'rows': 3}),
-        }
 
 
 class NewsletterForm(forms.ModelForm):
@@ -296,18 +146,6 @@ class ContactForm(forms.ModelForm):
         widgets = {
             'message': forms.Textarea(attrs={'rows': 5, 'placeholder': 'Your message...'}),
             'subject': forms.TextInput(attrs={'placeholder': 'Subject'}),
-        }
-
-
-class SiteSettingsForm(forms.ModelForm):
-    class Meta:
-        model = SiteSettings
-        fields = '__all__'
-        widgets = {
-            'address': forms.Textarea(attrs={'rows': 3}),
-            'maintenance_message': forms.Textarea(attrs={'rows': 3}),
-            'meta_description': forms.Textarea(attrs={'rows': 3}),
-            'meta_keywords': forms.Textarea(attrs={'rows': 2}),
         }
 
 

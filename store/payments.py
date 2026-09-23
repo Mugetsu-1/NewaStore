@@ -5,6 +5,10 @@ stay thin and unit-testable. Every function degrades gracefully when the
 gateway is not configured (empty keys in settings).
 """
 
+import base64
+import hashlib
+import hmac
+
 from django.conf import settings
 
 PAYPAL_API_BASE = {
@@ -26,32 +30,17 @@ def is_paypal_configured():
     return bool(settings.PAYPAL_CLIENT_ID and settings.PAYPAL_SECRET)
 
 
-SIMULATED_GATEWAYS = {
-    'esewa': {
-        'value': 'esewa',
-        'label': 'eSewa (Simulated)',
-        'brand': 'eSewa',
-        'tagline': 'Nepal’s digital wallet',
-        'color': '#60bb46',
-        'color_dark': '#4a9c37',
-        'icon': 'fa-wallet',
-        'id_label': 'eSewa ID (Mobile Number)',
-        'id_value': '9800000000',
-        'mpin': '1234',
-    },
-    'khalti': {
-        'value': 'khalti',
-        'label': 'Khalti (Simulated)',
-        'brand': 'Khalti',
-        'tagline': 'Pay with Khalti wallet',
-        'color': '#5c2d91',
-        'color_dark': '#4a2374',
-        'icon': 'fa-mobile-alt',
-        'id_label': 'Khalti Mobile Number',
-        'id_value': '9800000000',
-        'mpin': '1234',
-    },
-}
+class KhaltiError(Exception):
+    """Raised for any non-success Khalti API response."""
+
+
+def is_esewa_configured():
+    return bool(settings.ESEWA_PRODUCT_CODE and settings.ESEWA_SECRET_KEY)
+
+
+def is_khalti_configured():
+    return bool(settings.KHALTI_SECRET_KEY)
+
 
 BANK_TRANSFER_DETAILS = {
     'bank_name': 'Nay Bank',
@@ -67,37 +56,112 @@ BANK_TRANSFER_DETAILS = {
 }
 
 
-def get_simulated_gateway(value):
-    """Metadata for a simulated wallet, or None if it isn't one."""
-    return SIMULATED_GATEWAYS.get(value)
+def _esewa_signature(message):
+    """Base64(HMAC-SHA256) over `message` using the eSewa secret key."""
+    digest = hmac.new(
+        settings.ESEWA_SECRET_KEY.encode(),
+        message.encode(),
+        hashlib.sha256,
+    ).digest()
+    return base64.b64encode(digest).decode()
 
 
-def is_simulated_gateway(value):
-    return value in SIMULATED_GATEWAYS
+def build_esewa_form(order, success_url, failure_url):
+    """Signed field set for the eSewa ePay v2 auto-submit form.
+
+    The order total already includes tax, so it is sent as the whole
+    ``total_amount`` with zeroed tax/charges to avoid taxing twice. The
+    signature covers exactly ``total_amount,transaction_uuid,product_code``.
+    """
+    total_amount = f'{order.total:.2f}'
+    transaction_uuid = order.order_number
+    product_code = settings.ESEWA_PRODUCT_CODE
+    message = (
+        f'total_amount={total_amount},'
+        f'transaction_uuid={transaction_uuid},'
+        f'product_code={product_code}'
+    )
+    return {
+        'action': settings.ESEWA_FORM_URL,
+        'fields': {
+            'amount': total_amount,
+            'tax_amount': '0',
+            'total_amount': total_amount,
+            'transaction_uuid': transaction_uuid,
+            'product_code': product_code,
+            'product_service_charge': '0',
+            'product_delivery_charge': '0',
+            'success_url': success_url,
+            'failure_url': failure_url,
+            'signed_field_names': 'total_amount,transaction_uuid,product_code',
+            'signature': _esewa_signature(message),
+        },
+    }
+
+
+def verify_esewa_signature(data):
+    """Constant-time check of an eSewa response payload's own signature.
+
+    ``data`` is the decoded ``?data=`` JSON from the success callback. eSewa
+    signs the exact string values it returns, so the signed message is rebuilt
+    verbatim from the response's own ``signed_field_names`` order.
+    """
+    field_names = [f.strip() for f in data.get('signed_field_names', '').split(',') if f.strip()]
+    if not field_names:
+        return False
+    message = ','.join(f'{name}={data.get(name, "")}' for name in field_names)
+    expected = _esewa_signature(message)
+    return hmac.compare_digest(expected, data.get('signature', ''))
+
+
+def initiate_khalti_payment(order, return_url, website_url):
+    """Server-side KPG-2 initiate. Returns the {pidx, payment_url} dict."""
+    import requests
+    resp = requests.post(
+        settings.KHALTI_INITIATE_URL,
+        headers={'Authorization': f'Key {settings.KHALTI_SECRET_KEY}'},
+        json={
+            'return_url': return_url,
+            'website_url': website_url,
+            'amount': int(round(order.total * 100)),
+            'purchase_order_id': order.order_number,
+            'purchase_order_name': f'Newa Store order {order.order_number}',
+        },
+        timeout=20,
+    )
+    if resp.status_code != 200:
+        raise KhaltiError(f'Khalti initiate failed (HTTP {resp.status_code}).')
+    return resp.json()
+
+
+def lookup_khalti_payment(pidx):
+    """Authoritative KPG-2 lookup. Returns the payment status dict."""
+    import requests
+    resp = requests.post(
+        settings.KHALTI_LOOKUP_URL,
+        headers={'Authorization': f'Key {settings.KHALTI_SECRET_KEY}'},
+        json={'pidx': pidx},
+        timeout=20,
+    )
+    if resp.status_code != 200:
+        raise KhaltiError(f'Khalti lookup failed (HTTP {resp.status_code}).')
+    return resp.json()
 
 
 def available_payment_methods():
-    """Checkout radio choices, marking unconfigured gateways as disabled hints.
+    """Checkout radio choices as (value, label, disabled) tuples.
 
-    Each entry is a (value, label, disabled) tuple so the template can render
-    unavailable methods as disabled placeholders instead of silently dropping
-    them (keeps the checkout UI looking complete before keys are added).
-
-    eSewa/Khalti and Nay Bank Transfer are always available because they are
-    either simulated locally or settled offline.
+    Unconfigured gateways stay visible but disabled so the checkout UI looks
+    complete before keys are added. Nay Bank Transfer settles offline and is
+    always available.
     """
-    methods = [
-        ('esewa', SIMULATED_GATEWAYS['esewa']['label'], False),
-        ('khalti', SIMULATED_GATEWAYS['khalti']['label'], False),
+    return [
+        ('esewa', 'eSewa', not is_esewa_configured()),
+        ('khalti', 'Khalti', not is_khalti_configured()),
         ('nay_bank', 'Nay Bank Transfer', False),
-        ('stripe', 'Credit/Debit Card (Stripe)', True),
-        ('paypal', 'PayPal', True),
+        ('stripe', 'Credit/Debit Card (Stripe)', not is_stripe_configured()),
+        ('paypal', 'PayPal', not is_paypal_configured()),
     ]
-    if is_stripe_configured():
-        methods = [m if m[0] != 'stripe' else (m[0], m[1], False) for m in methods]
-    if is_paypal_configured():
-        methods = [m if m[0] != 'paypal' else (m[0], m[1], False) for m in methods]
-    return methods
 
 
 def _available_payment_method_choices():

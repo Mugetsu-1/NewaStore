@@ -135,12 +135,6 @@ class Product(models.Model):
         return self.stock_quantity > 0 or self.allow_backorder
 
     @property
-    def is_low_stock(self):
-        if not self.track_inventory:
-            return False
-        return self.stock_quantity <= self.low_stock_threshold and self.stock_quantity > 0
-
-    @property
     def average_rating(self):
         reviews = self.reviews.filter(is_approved=True)
         if reviews.exists():
@@ -248,12 +242,6 @@ class ProductVariant(models.Model):
     @property
     def final_price(self):
         return self.product.current_price + self.price_adjustment
-
-    @property
-    def is_in_stock(self):
-        if not self.product.track_inventory:
-            return True
-        return self.stock_quantity > 0
 
 
 class Review(models.Model):
@@ -512,9 +500,6 @@ class Order(models.Model):
         if not self.order_number:
             self.order_number = f"ORD-{uuid.uuid4().hex[:10].upper()}"
         super().save(*args, **kwargs)
-
-    def get_absolute_url(self):
-        return reverse('order_detail', kwargs={'order_number': self.order_number})
 
     @property
     def email(self):

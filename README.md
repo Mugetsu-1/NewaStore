@@ -66,7 +66,7 @@ not retried on every startup.
 - **Guest checkout** and account checkout
 - Billing details collected at checkout and stored on the order for invoices
 - Automatic **tax calculation**
-- Payment methods: **eSewa, Khalti, Stripe, PayPal, Bank Transfer** (eSewa & Khalti are simulated in this demo)
+- Payment methods: **eSewa, Khalti, Stripe, PayPal, Bank Transfer**. eSewa (ePay v2) and Khalti (KPG-2) use their **real sandbox APIs** with server-side signature/lookup verification; Stripe and PayPal use their sandbox modes; Nay Bank is an offline bank transfer. No real money moves in sandbox mode.
 - Order confirmation + status emails
 
 ### Orders

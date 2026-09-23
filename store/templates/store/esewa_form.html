@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+{% load static store_extras %}
+
+{% block content %}
+<div class="container section" style="max-width:560px">
+    <div class="checkout-section" style="text-align:center">
+        <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:8px">
+            <i class="fas fa-wallet" style="font-size:1.4rem;color:#60bb46"></i>
+            <h1 style="font-size:1.5rem">Redirecting to eSewa</h1>
+        </div>
+        <p class="text-muted mb-4">
+            Order <strong>{{ order.order_number }}</strong> · Total
+            <strong>{{ currency_symbol }} {{ order.total|floatformat:2 }}</strong>
+        </p>
+
+        <div class="text-muted mb-3">
+            <i class="fas fa-spinner fa-spin"></i>
+            Taking you to eSewa's secure payment page…
+        </div>
+
+        <form id="esewa-form" method="POST" action="{{ esewa_action }}">
+            {% for name, value in esewa_fields.items %}
+            <input type="hidden" name="{{ name }}" value="{{ value }}">
+            {% endfor %}
+            <button type="submit" class="btn btn-primary btn-lg btn-block">
+                <i class="fas fa-lock"></i> Continue to eSewa
+            </button>
+        </form>
+        <a href="{% url 'home' %}" class="btn btn-ghost btn-block mt-2">Cancel</a>
+        <p class="text-muted text-center mt-3" style="font-size:.78rem">
+            If the page does not redirect automatically, tap the button above.
+        </p>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  var form = document.getElementById('esewa-form');
+  if (form) form.submit();
+});
+</script>
+{% endblock %}

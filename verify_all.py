@@ -1,7 +1,8 @@
 """End-to-end verification against the LIVE Postgres database.
 
-Covers: image coverage, every core route, the simulated wallet checkout,
-Nay Bank transfer, admin access, and SMTP configuration.
+Covers: image coverage, every core route, the real-gateway checkout
+(eSewa ePay v2 signature verify + forged-callback rejection), Nay Bank
+transfer, admin access, and SMTP configuration.
 Creates a throwaway user + orders and cleans them up afterwards.
 """
 import os
@@ -17,6 +18,10 @@ django.setup()
 from django.core import mail
 
 from django.conf import settings
+
+if "testserver" not in settings.ALLOWED_HOSTS:
+    settings.ALLOWED_HOSTS = list(settings.ALLOWED_HOSTS) + ["testserver"]
+
 from django.contrib.auth.models import User
 from django.test import Client
 
@@ -68,7 +73,8 @@ check("SMTP backend configured in .env",
       "smtp" in (env.get("DJANGO_EMAIL_BACKEND") or ""),
       env.get("DJANGO_EMAIL_BACKEND") or "missing")
 check("Gmail app password present in .env", bool(env.get("EMAIL_HOST_PASSWORD")))
-check("eSewa secret not hardcoded in settings.py", "8gBm" not in settings_src)
+check("eSewa secret read from environment in settings.py",
+      "os.environ.get('ESEWA_SECRET_KEY'" in settings_src)
 check("eSewa secret not hardcoded in views.py", "8gBm" not in views_src)
 check("DJANGO_DB switch removed from .env", "DJANGO_DB" not in env)
 
@@ -125,9 +131,13 @@ for label, url, validator in api_checks:
 
 print()
 print("=" * 68)
-print("4. CHECKOUT — SIMULATED eSEWA / KHALTI + NAY BANK")
+print("4. CHECKOUT — REAL eSEWA (ePay v2) SIGNATURE VERIFY + NAY BANK")
 print("=" * 68)
 SiteSettings.get_settings()
+
+import base64
+import json
+from store.payments import _esewa_signature, is_esewa_configured, is_khalti_configured
 
 USERNAME = "verify_flow_user"
 Order.objects.filter(user__username=USERNAME).delete()
@@ -153,47 +163,77 @@ def place_order(client, method):
     })
 
 
+def signed_esewa_data(order, status="COMPLETE", amount=None):
+    """Build a base64 ?data= payload signed with the real eSewa test secret."""
+    amount = f"{order.total:.2f}" if amount is None else amount
+    fields = {
+        "transaction_code": "000TESTCODE", "status": status,
+        "total_amount": amount, "transaction_uuid": order.order_number,
+        "product_code": settings.ESEWA_PRODUCT_CODE,
+        "signed_field_names":
+            "transaction_code,status,total_amount,transaction_uuid,product_code,signed_field_names",
+    }
+    names = fields["signed_field_names"].split(",")
+    fields["signature"] = _esewa_signature(",".join(f"{n}={fields[n]}" for n in names))
+    return base64.b64encode(json.dumps(fields).encode()).decode()
+
+
 buyer = Client()
 check("login works", buyer.login(username=USERNAME, password="verify12345") is True)
 
 buyer.post(f"/cart/add/{checkout_product.id}/", {"quantity": 1})
 page = buyer.get("/checkout/").content.decode()
 check("checkout page renders", "Place Order" in page)
-for value, label in [("esewa", "eSewa (Simulated)"), ("khalti", "Khalti (Simulated)"),
-                     ("nay_bank", "Nay Bank Transfer")]:
-    check(f"checkout offers {value}", f'value="{value}"' in page and label in page)
+check("checkout offers eSewa", 'value="esewa"' in page and is_esewa_configured())
+check("checkout offers Nay Bank Transfer",
+      'value="nay_bank"' in page and "Nay Bank Transfer" in page)
+check("checkout shows no 'Simulated' wording", "Simulated" not in page)
+if not is_khalti_configured():
+    check("Khalti hidden until configured", 'value="khalti"' not in page)
 
 resp = place_order(buyer, "esewa")
 order = Order.objects.filter(user=user).order_by("-id").first()
-body = resp.content.decode() if resp.status_code == 200 else ""
-check("eSewa returns a local page (no external redirect)",
-      resp.status_code == 200, f"HTTP {resp.status_code}")
-check("eSewa page branded + marked simulated",
-      "Simulated payment" in body and "eSewa" in body)
-check("eSewa page contacts no external host",
-      "esewa.com.np" not in body and "rc-epay" not in body)
-check("order unpaid before confirmation", bool(order) and not order.is_paid)
+check("eSewa checkout redirects into the signed-form page",
+      resp.status_code == 302, f"HTTP {resp.status_code}")
+form_page = buyer.get(f"/payment/esewa/{order.order_number}/").content.decode()
+check("eSewa form posts to the real gateway URL", settings.ESEWA_FORM_URL in form_page)
+check("eSewa form carries a signature field", 'name="signature"' in form_page)
+check("eSewa form carries the transaction id", 'name="transaction_uuid"' in form_page)
+check("order unpaid before eSewa confirms", bool(order) and not order.is_paid)
 
-resp = buyer.post(f"/payment/simulate/{order.order_number}/esewa/", {"outcome": "success"})
+resp = buyer.get("/esewa-verify/", {"data": signed_esewa_data(order)})
 order.refresh_from_db()
-check("simulate success redirects to order_success",
+check("valid signed eSewa callback redirects to order_success",
       resp.status_code == 302 and f"/order/success/{order.order_number}/" in resp.url,
       resp.get("Location", ""))
-check("order marked paid", order.is_paid, order.payment_status)
+check("order marked paid on verified eSewa callback", order.is_paid, order.payment_status)
 check("order confirmed", order.status == "confirmed")
-check("SIM transaction id stored", order.payment_transaction_id.startswith("SIM-"),
-      order.payment_transaction_id)
 
-place_order(buyer, "khalti")
-order2 = Order.objects.filter(user=user).order_by("-id").first()
-resp = buyer.post(f"/payment/simulate/{order2.order_number}/khalti/", {"outcome": "failure"})
-order2.refresh_from_db()
-check("simulate failure redirects to payment_failed",
+paid_txn = order.payment_transaction_id
+buyer.get("/esewa-verify/", {"data": signed_esewa_data(order)})
+order.refresh_from_db()
+check("verified eSewa callback is idempotent on a paid order",
+      order.is_paid and order.payment_transaction_id == paid_txn, paid_txn)
+
+place_order(buyer, "esewa")
+order_f = Order.objects.filter(user=user).order_by("-id").first()
+tampered = signed_esewa_data(order_f, amount=f"{order_f.total + 1:.2f}")
+resp = buyer.get("/esewa-verify/", {"data": tampered})
+order_f.refresh_from_db()
+check("forged eSewa amount is rejected (order not paid)", not order_f.is_paid,
+      order_f.payment_status)
+check("forged eSewa callback redirects to payment_failed",
       resp.status_code == 302 and "/payment/failed/" in resp.url)
-check("declined order marked failed", order2.payment_status == "failed")
 
-r = buyer.get(f"/payment/simulate/{order2.order_number}/stripe/")
-check("unknown gateway 404s", r.status_code == 404, f"HTTP {r.status_code}")
+if not is_khalti_configured():
+    place_order(buyer, "esewa")
+    order_k = Order.objects.filter(user=user).order_by("-id").first()
+    resp = buyer.get("/khalti-verify/", {
+        "purchase_order_id": order_k.order_number, "status": "Completed",
+    })
+    order_k.refresh_from_db()
+    check("forged Khalti querystring does not settle the order (no server lookup)",
+          not order_k.is_paid, order_k.payment_status)
 
 place_order(buyer, "nay_bank")
 order3 = Order.objects.filter(user=user).order_by("-id").first()

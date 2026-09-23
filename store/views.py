@@ -1,6 +1,6 @@
 import base64
 import json
-import uuid
+from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
 from django.contrib import messages
@@ -16,13 +16,15 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse_lazy, reverse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_POST, require_http_methods
+from django.views.decorators.http import require_POST
 from django.db.models import Prefetch
 
 from .payments import (
     is_stripe_configured, create_stripe_payment_intent, retrieve_stripe_payment_intent,
     is_paypal_configured, create_paypal_order, capture_paypal_order, PayPalError,
-    get_simulated_gateway, is_simulated_gateway, BANK_TRANSFER_DETAILS,
+    is_esewa_configured, build_esewa_form, verify_esewa_signature,
+    is_khalti_configured, initiate_khalti_payment, lookup_khalti_payment, KhaltiError,
+    BANK_TRANSFER_DETAILS,
 )
 from .models import (
     Product, Category, Tag, ProductVariant, ProductImage, Review,
@@ -33,12 +35,12 @@ from .models import (
 from .forms import (
     CustomRegisterForm, UserProfileForm, ReviewForm,
     CheckoutForm, CouponApplyForm, NewsletterForm, ContactForm,
-    ProductSearchForm, OrderStatusUpdateForm,
+    ProductSearchForm,
 )
 from .cart import CartManager
 from .recommendations import recommend_for_product
 from .utils import (
-    calculate_tax, send_order_confirmation, send_order_status_update,
+    calculate_tax, send_order_confirmation,
     build_invoice_pdf, get_client_ip, send_templated_email,
     send_welcome_email, mark_order_paid,
 )
@@ -295,11 +297,9 @@ def quick_view(request, slug):
 
 def cart_view(request):
     cart = CartManager(request).cart
-    coupon_form = CouponApplyForm()
     context = {
         'cart': cart,
         'items': cart.items.select_related('product', 'variant').all(),
-        'coupon_form': coupon_form,
         'page_title': 'Shopping Cart',
     }
     return render(request, 'store/cart.html', context)
@@ -422,6 +422,8 @@ def checkout(request):
         'items': manager.items,
         'subtotal': manager.subtotal,
         'discount': manager.discount,
+        'tax': calculate_tax(manager.subtotal - manager.discount),
+        'total': (manager.subtotal - manager.discount) + calculate_tax(manager.subtotal - manager.discount),
         'page_title': 'Checkout',
     }
     return render(request, 'store/checkout.html', context)
@@ -496,8 +498,10 @@ def _create_order_and_pay(request, form, manager):
     send_order_confirmation(order)
 
     payment_method = data['payment_method']
-    if is_simulated_gateway(payment_method):
-        return _initiate_simulated_gateway(request, order, payment_method)
+    if payment_method == 'esewa':
+        return redirect('esewa_checkout', order_number=order.order_number)
+    elif payment_method == 'khalti':
+        return redirect('khalti_checkout', order_number=order.order_number)
     elif payment_method == 'nay_bank':
         messages.info(
             request,
@@ -513,64 +517,45 @@ def _create_order_and_pay(request, form, manager):
         return redirect('order_success', order_number=order.order_number)
 
 
-def _initiate_simulated_gateway(request, order, gateway):
-    """Render the in-app stand-in for eSewa / Khalti.
-
-    No external request is made and no real money moves: the shopper sees a
-    page laid out like the wallet's payment screen and chooses to confirm or
-    decline a simulated transaction.
-    """
-    meta = get_simulated_gateway(gateway)
-    if meta is None:
-        raise Http404('Unknown payment gateway.')
-    return render(request, 'store/simulated_gateway.html', {
-        'order': order,
-        'gateway': gateway,
-        'meta': meta,
-        'amount': order.total,
-        'page_title': f'Pay with {meta["brand"]}',
-    })
-
-
-@require_http_methods(['GET', 'POST'])
-def simulate_payment(request, order_number, gateway):
-    """Handle the demo wallet screen: confirm (paid) or decline (failed)."""
+def esewa_checkout(request, order_number):
+    """Render the signed auto-submit form that POSTs the order to eSewa."""
     order = get_object_or_404(Order, order_number=order_number)
-    meta = get_simulated_gateway(gateway)
-    if meta is None:
-        raise Http404('Unknown payment gateway.')
-
-    if request.method == 'POST':
-        outcome = request.POST.get('outcome', 'success')
-        if outcome == 'success':
-            txn_id = f'SIM-{uuid.uuid4().hex[:12].upper()}'
-            mark_order_paid(order, gateway=gateway, txn_id=txn_id)
-            messages.success(
-                request,
-                f'{meta["brand"]} payment confirmed (simulated) — '
-                f'transaction {txn_id}.',
-            )
-            return redirect('order_success', order_number=order.order_number)
-
-        if order.payment_status != 'paid':
-            order.payment_status = 'failed'
-            order.save(update_fields=['payment_status'])
-        messages.error(
-            request,
-            f'{meta["brand"]} payment was declined (simulated). '
-            'You can try again with another method.',
-        )
+    if order.payment_status == 'paid':
+        return redirect('order_success', order_number=order.order_number)
+    if not is_esewa_configured():
+        messages.error(request, 'eSewa is not available right now. Please choose another method.')
         return redirect('payment_failed', order_number=order.order_number)
-
-    return render(request, 'store/simulated_gateway.html', {
+    form = build_esewa_form(
+        order,
+        success_url=request.build_absolute_uri(reverse('esewa_verify')),
+        failure_url=request.build_absolute_uri(reverse('payment_failed', args=[order.order_number])),
+    )
+    return render(request, 'store/esewa_form.html', {
         'order': order,
-        'gateway': gateway,
-        'meta': meta,
-        'amount': order.total,
-        'page_title': f'Pay with {meta["brand"]}',
+        'esewa_action': form['action'],
+        'esewa_fields': form['fields'],
+        'page_title': 'Redirecting to eSewa',
     })
 
 
+def khalti_checkout(request, order_number):
+    """Server-side KPG-2 initiate, then redirect to Khalti's hosted page."""
+    order = get_object_or_404(Order, order_number=order_number)
+    if order.payment_status == 'paid':
+        return redirect('order_success', order_number=order.order_number)
+    if not is_khalti_configured():
+        messages.error(request, 'Khalti is not available right now. Please choose another method.')
+        return redirect('payment_failed', order_number=order.order_number)
+    try:
+        data = initiate_khalti_payment(
+            order,
+            return_url=request.build_absolute_uri(reverse('khalti_verify')),
+            website_url=request.build_absolute_uri(reverse('home')),
+        )
+    except KhaltiError:
+        messages.error(request, 'Could not start the Khalti payment. Please try again.')
+        return redirect('payment_failed', order_number=order.order_number)
+    return redirect(data['payment_url'])
 
 
 def _order_for_payment(request, order_number):
@@ -629,18 +614,14 @@ def stripe_webhook(request):
     """Webhook endpoint — fulfills orders when payment_intent.succeeded fires."""
     payload = request.body
     secret = getattr(settings, 'STRIPE_WEBHOOK_SECRET', '')
-    if secret:
-        try:
-            import stripe
-            stripe.api_key = settings.STRIPE_SECRET_KEY
-            event = stripe.Webhook.construct_event(payload, request.META.get('HTTP_STRIPE_SIGNATURE', ''), secret)
-        except Exception:
-            return HttpResponse(status=400)
-    else:
-        try:
-            event = json.loads(payload)
-        except (TypeError, ValueError, json.JSONDecodeError):
-            return HttpResponse(status=400)
+    if not secret:
+        return HttpResponse(status=503)
+    try:
+        import stripe
+        stripe.api_key = settings.STRIPE_SECRET_KEY
+        event = stripe.Webhook.construct_event(payload, request.META.get('HTTP_STRIPE_SIGNATURE', ''), secret)
+    except Exception:
+        return HttpResponse(status=400)
 
     if event.get('type') == 'payment_intent.succeeded':
         pi = event['data']['object']
@@ -704,12 +685,12 @@ def paypal_capture(request, order_number):
 def _verify_paypal_webhook(request, event_body):
     """Verify a PayPal webhook with its transmission signature.
 
-    Requires PAYPAL_WEBHOOK_ID + the `cryptography` package. Automatically
-    skipped in development when PAYPAL_WEBHOOK_ID is empty.
+    Requires PAYPAL_WEBHOOK_ID + the `cryptography` package. Fails closed
+    (rejects the event) when the webhook id is unset or verification cannot run.
     """
     webhook_id = getattr(settings, 'PAYPAL_WEBHOOK_ID', '')
     if not webhook_id:
-        return True
+        return False
     cert_url = request.META.get('HTTP_PAYPAL_CERT_URL', '')
     if not (cert_url.startswith('https://api-m.sandbox.paypal.com') or
             cert_url.startswith('https://api-m.paypal.com')):
@@ -761,6 +742,12 @@ def paypal_webhook(request):
 
 
 def esewa_verify(request):
+    """Success callback — trust only eSewa's signed, server-recomputed response.
+
+    eSewa returns the signed fields as base64 JSON in ``?data=``. The order is
+    fulfilled only when the HMAC signature verifies, the status is COMPLETE, and
+    the returned amount matches the order total to the paisa.
+    """
     encoded_data = request.GET.get('data')
     if not encoded_data:
         messages.error(request, 'Payment verification failed.')
@@ -773,45 +760,53 @@ def esewa_verify(request):
         messages.error(request, 'Invalid payment response.')
         return redirect('home')
 
-    transaction_uuid = response.get('transaction_uuid')
-    order = Order.objects.filter(order_number=transaction_uuid).first()
+    order = Order.objects.filter(order_number=response.get('transaction_uuid')).first()
     if not order:
         messages.error(request, 'Order not found.')
         return redirect('home')
 
-    if response.get('status') == 'COMPLETE':
-        order.payment_status = 'paid'
-        order.payment_transaction_id = response.get('transaction_code', '')
-        order.status = 'confirmed'
-        order.confirmed_at = timezone.now()
-        order.save()
-        send_order_status_update(order)
+    try:
+        paid = Decimal(str(response.get('total_amount', '0')).replace(',', ''))
+    except (InvalidOperation, TypeError):
+        paid = Decimal('0')
+
+    if (verify_esewa_signature(response)
+            and response.get('status') == 'COMPLETE'
+            and paid == order.total.quantize(Decimal('0.01'))):
+        mark_order_paid(order, gateway='esewa', txn_id=response.get('transaction_code', ''))
         return redirect('order_success', order_number=order.order_number)
 
-    order.payment_status = 'failed'
-    order.save()
+    if order.payment_status != 'paid':
+        Order.objects.filter(pk=order.pk).update(payment_status='failed')
+    messages.error(request, 'eSewa payment could not be verified.')
     return redirect('payment_failed', order_number=order.order_number)
 
 
 def khalti_verify(request):
-    order_number = request.GET.get('purchase_order_id')
-    order = Order.objects.filter(order_number=order_number).first()
+    """Return callback — authoritative KPG-2 lookup decides the outcome.
+
+    Khalti's redirect query string is not trusted; the payment is confirmed
+    only when a server-side lookup reports ``Completed`` for the amount owed.
+    """
+    order = Order.objects.filter(order_number=request.GET.get('purchase_order_id')).first()
     if not order:
         messages.error(request, 'Order not found.')
         return redirect('home')
 
-    status = request.GET.get('status', '').lower()
-    if status == 'completed':
-        order.payment_status = 'paid'
-        order.payment_transaction_id = request.GET.get('transaction_id', '')
-        order.status = 'confirmed'
-        order.confirmed_at = timezone.now()
-        order.save()
-        send_order_status_update(order)
+    pidx = request.GET.get('pidx', '')
+    try:
+        result = lookup_khalti_payment(pidx) if pidx else {}
+    except KhaltiError:
+        result = {}
+
+    if (result.get('status') == 'Completed'
+            and result.get('total_amount') == int(round(order.total * 100))):
+        mark_order_paid(order, gateway='khalti', txn_id=result.get('transaction_id') or pidx)
         return redirect('order_success', order_number=order.order_number)
 
-    order.payment_status = 'failed'
-    order.save()
+    if order.payment_status != 'paid':
+        Order.objects.filter(pk=order.pk).update(payment_status='failed')
+    messages.error(request, 'Khalti payment could not be verified.')
     return redirect('payment_failed', order_number=order.order_number)
 
 
@@ -829,7 +824,6 @@ def order_success(request, order_number):
         'order': order,
         'page_title': 'Order Confirmed',
         'bank_details': BANK_TRANSFER_DETAILS if order.payment_method == 'nay_bank' else None,
-        'is_simulated': is_simulated_gateway(order.payment_method),
     })
 
 
@@ -1130,11 +1124,6 @@ def error_404(request, exception):
 
 def error_500(request):
     return render(request, 'store/errors/500.html', status=500)
-
-
-def maintenance(request):
-    settings_obj = SiteSettings.get_settings()
-    return render(request, 'store/maintenance.html', {'site_settings': settings_obj})
 
 
 def robots_txt(request):

@@ -1,45 +1,7 @@
-from decimal import Decimal, InvalidOperation
-
 from django import template
 from django.utils.safestring import mark_safe
-from django.utils.html import escape
 
 register = template.Library()
-
-
-@register.filter
-def currency(value, symbol='Rs.'):
-    try:
-        value = Decimal(str(value))
-        return f"{symbol} {value:,.2f}"
-    except (InvalidOperation, TypeError, ValueError):
-        return f"{symbol} 0.00"
-
-
-@register.filter
-def percent(value):
-    try:
-        return f"{int(value)}%"
-    except (TypeError, ValueError):
-        return "0%"
-
-
-@register.filter
-def multiply(value, arg):
-    try:
-        return Decimal(str(value)) * Decimal(str(arg))
-    except (InvalidOperation, TypeError, ValueError):
-        return 0
-
-
-@register.filter
-def divide(value, arg):
-    try:
-        if Decimal(str(arg)) == 0:
-            return 0
-        return Decimal(str(value)) / Decimal(str(arg))
-    except (InvalidOperation, TypeError, ValueError):
-        return 0
 
 
 @register.filter
@@ -59,15 +21,6 @@ def stars(rating):
     html += '<i class="far fa-star"></i>' * empty
     html += '</span>'
     return mark_safe(html)
-
-
-@register.filter
-def product_image(product):
-    """Return the best available image URL for a product."""
-    primary = product.images.filter(is_primary=True).first() or product.images.first()
-    if primary and primary.image:
-        return primary.image.url
-    return ''
 
 
 @register.simple_tag(takes_context=True)
@@ -95,13 +48,6 @@ def order_status_badge(status):
     }
     color = colors.get(status, 'secondary')
     return mark_safe(f'<span class="badge badge-{color}">{status.title()}</span>')
-
-
-@register.filter
-def get_item(mapping, key):
-    if isinstance(mapping, dict):
-        return mapping.get(key)
-    return None
 
 
 @register.filter
