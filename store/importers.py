@@ -55,6 +55,65 @@ def usd_to_npr(usd):
     return (npr // 10) * 10
 
 
+def tier_for_usd(usd):
+    """Production tier from the imported USD list price.
+
+    Drives homepage prominence and default ordering. Derived from price
+    because it is the one signal present on every catalog row (metacritic is
+    almost always missing in the SteamSpy feed).
+    """
+    usd = float(usd or 0)
+    if usd <= 0:
+        return Product.TIER_FREE
+    if usd >= 40:
+        return Product.TIER_AAA
+    if usd >= 15:
+        return Product.TIER_AA
+    return Product.TIER_INDIE
+
+
+def _round_to(value, step):
+    return Decimal(int(round(float(value) / step)) * step)
+
+
+def tiered_price_npr(usd):
+    """Map an imported USD list price to a clean, tiered NPR price.
+
+    AAA (>= $40) -> Rs 3,000-8,000 (round 500); AA ($15-40) -> Rs 1,500-3,500
+    (round 250); indie/older (< $15) -> Rs 400-1,800 (round 100); free -> Rs 0.
+    Replaces the old raw usd*rate conversion, which produced odd figures like
+    Rs 1,349 or Rs 8,097.
+    """
+    usd = float(usd or 0)
+    if usd <= 0:
+        return Decimal('0')
+    if usd >= 40:                                   # AAA
+        u = min(usd, 70.0)
+        return _round_to(3000 + (u - 40) / 30 * 5000, 500)
+    if usd >= 15:                                   # AA / mid-tier
+        u = min(usd, 40.0)
+        return _round_to(1500 + (u - 15) / 25 * 2000, 250)
+    return _round_to(400 + usd / 15 * 1400, 100)    # indie / older
+
+
+def tiered_prices(price_usd, discount_usd=None):
+    """Return (price, discount_price, cost_price, tier) in NPR for an import row.
+
+    The sale price keeps the source discount *ratio* against the tiered list
+    price, so a 25%-off deal stays 25% off after re-tiering.
+    """
+    price_usd = Decimal(price_usd or 0)
+    tier = tier_for_usd(price_usd)
+    price = tiered_price_npr(price_usd)
+    cost = _round_to(price * Decimal('0.7'), 10) if price > 0 else None
+    discount = None
+    if discount_usd and price_usd > 0 and price > 0:
+        d = _round_to(price * (Decimal(discount_usd) / price_usd), 10)
+        if 0 < d < price:
+            discount = d
+    return price, discount, cost, tier
+
+
 def normalize_title(title):
     return re.sub(r'[^a-z0-9]', '', (title or '').lower())
 
@@ -238,16 +297,18 @@ def upsert_games(games, data_source, update_existing=True, on_progress=None):
             p = updates.get(pid) or Product(pk=pid)
             changed = False
             if g.get('price_usd') is not None:
-                new_price = usd_to_npr(g['price_usd'])
-                if p.price != new_price:
-                    p.price = new_price
-                    update_fields |= {'price'}
-                    changed = True
-            new_disc = usd_to_npr(g['discount_usd']) if g.get('discount_usd') else None
-            if g.get('discount_usd') is not None and p.discount_price != new_disc:
-                p.discount_price = new_disc
-                update_fields |= {'discount_price'}
+                new_price, new_disc, new_cost, new_tier = tiered_prices(
+                    g['price_usd'], g.get('discount_usd'))
+                p.price = new_price
+                p.tier = new_tier
+                update_fields |= {'price', 'tier'}
                 changed = True
+                if new_cost is not None:
+                    p.cost_price = new_cost
+                    update_fields |= {'cost_price'}
+                if g.get('discount_usd') is not None:
+                    p.discount_price = new_disc
+                    update_fields |= {'discount_price'}
             if g.get('metacritic') is not None and p.metacritic_score != g['metacritic']:
                 p.metacritic_score = g['metacritic']
                 update_fields |= {'metacritic_score'}
@@ -281,6 +342,7 @@ def upsert_games(games, data_source, update_existing=True, on_progress=None):
             f'- Format: Digital download key (no shipping required)\n\n'
             f'Your key is delivered by email immediately after checkout.')
         release = g.get('release') or dj_tz.now()
+        t_price, t_disc, t_cost, t_tier = tiered_prices(price_usd, g.get('discount_usd'))
 
         to_create.append(Product(
             name=name,
@@ -288,9 +350,10 @@ def upsert_games(games, data_source, update_existing=True, on_progress=None):
             sku=sku,
             description=description,
             short_description=short,
-            price=usd_to_npr(price_usd),
-            discount_price=usd_to_npr(g['discount_usd']) if g.get('discount_usd') else None,
-            cost_price=usd_to_npr(price_usd * Decimal('0.7')) if price_usd else None,
+            price=t_price,
+            discount_price=t_disc,
+            cost_price=t_cost,
+            tier=t_tier,
             category=category,
             is_digital=True,
             track_inventory=False,

@@ -10,6 +10,9 @@
                 {% endif %}
             {% endwith %}
         </a>
+        {% if product.tier >= 2 %}
+        <span class="tier-badge tier-{{ product.tier }}">{{ product.tier_label }}</span>
+        {% endif %}
         <button class="product-wish {% if wishlist and product|in_wishlist:wishlist %}active{% endif %}"
                 data-wishlist-toggle
                 data-url="{% url 'wishlist_toggle' product.id %}"

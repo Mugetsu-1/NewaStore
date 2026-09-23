@@ -23,17 +23,7 @@ urlpatterns = [
 
     path('checkout/', views.checkout, name='checkout'),
     path('payment/esewa/<str:order_number>/', views.esewa_checkout, name='esewa_checkout'),
-    path('payment/khalti/<str:order_number>/', views.khalti_checkout, name='khalti_checkout'),
     path('esewa-verify/', views.esewa_verify, name='esewa_verify'),
-    path('khalti-verify/', views.khalti_verify, name='khalti_verify'),
-    path('payment/stripe/<str:order_number>/', views.stripe_checkout, name='stripe_checkout'),
-    path('payment/stripe/<str:order_number>/intent/', views.stripe_create_intent, name='stripe_create_intent'),
-    path('payment/stripe/<str:order_number>/success/', views.stripe_success, name='stripe_success'),
-    path('webhooks/stripe/', views.stripe_webhook, name='stripe_webhook'),
-    path('payment/paypal/<str:order_number>/', views.paypal_checkout, name='paypal_checkout'),
-    path('payment/paypal/<str:order_number>/create/', views.paypal_create_order, name='paypal_create_order'),
-    path('payment/paypal/<str:order_number>/capture/', views.paypal_capture, name='paypal_capture'),
-    path('webhooks/paypal/', views.paypal_webhook, name='paypal_webhook'),
     path('payment/failed/<str:order_number>/', views.payment_failed, name='payment_failed'),
     path('order/success/<str:order_number>/', views.order_success, name='order_success'),
 

@@ -65,6 +65,12 @@
                         <label class="form-label">Country <span class="req">*</span></label>
                         {{ form.billing_country }}
                     </div>
+                    {% if user.is_authenticated %}
+                    <div class="form-check" style="margin-top:8px">
+                        {{ form.save_details }}
+                        <label for="id_save_details">{{ form.save_details.label }}</label>
+                    </div>
+                    {% endif %}
                 </div>
 
                 <div class="checkout-section">
@@ -89,9 +95,6 @@
                             {{ radio.tag }}
                             <span class="payment-logo">
                                 {% if radio.data.value == 'esewa' %}<i class="fas fa-wallet" style="color:#60bb46"></i>
-                                {% elif radio.data.value == 'khalti' %}<i class="fas fa-mobile-alt" style="color:#5c2d91"></i>
-                                {% elif radio.data.value == 'stripe' %}<i class="fas fa-credit-card" style="color:#635bff"></i>
-                                {% elif radio.data.value == 'paypal' %}<i class="fab fa-cc-paypal" style="color:#003087"></i>
                                 {% else %}<i class="fas fa-university"></i>{% endif %}
                             </span>
                             <span>{{ radio.choice_label }}</span>

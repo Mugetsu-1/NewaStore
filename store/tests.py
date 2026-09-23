@@ -3,10 +3,9 @@ import base64
 import io
 import json
 from io import StringIO
-from unittest import mock
 
 from django.conf import settings
-from django.test import TestCase, Client, override_settings
+from django.test import TestCase, Client
 from django.contrib.auth.models import User
 from django.core import mail
 from django.urls import reverse
@@ -356,7 +355,7 @@ class AuthFlowTests(TestCase):
 
 
 class PaymentFulfillmentTests(TestCase):
-    """Stripe / PayPal checkout + webhook fulfillment via mark_order_paid."""
+    """Order fulfillment via mark_order_paid + checkout gateway validation."""
 
     def _make_order(self, **kw):
         defaults = dict(
@@ -364,132 +363,41 @@ class PaymentFulfillmentTests(TestCase):
             total=Decimal('1130'),
             tax_amount=Decimal('130'),
             guest_email='buyer@example.com',
-            payment_method='stripe',
+            payment_method='esewa',
         )
         defaults.update(kw)
         return Order.objects.create(**defaults)
 
     def test_mark_order_paid_is_idempotent(self):
         order = self._make_order()
-        mark_order_paid(order, gateway='stripe', txn_id='pi_test_1')
-        mark_order_paid(order, gateway='stripe', txn_id='pi_test_1')
+        mark_order_paid(order, gateway='esewa', txn_id='esw_test_1')
+        mark_order_paid(order, gateway='esewa', txn_id='esw_test_1')
         order.refresh_from_db()
         self.assertEqual(order.payment_status, 'paid')
         self.assertEqual(order.status, 'confirmed')
         self.assertIsNotNone(order.confirmed_at)
-        self.assertEqual(order.payment_transaction_id, 'pi_test_1')
+        self.assertEqual(order.payment_transaction_id, 'esw_test_1')
         self.assertEqual(OrderStatusHistory.objects.filter(order=order).count(), 1)
         self.assertEqual(len(mail.outbox), 2)
 
-    def test_stripe_webhook_rejects_unsigned_when_no_secret(self):
-        """Fail-closed: with no STRIPE_WEBHOOK_SECRET set, forged events are refused."""
-        order = self._make_order()
-        payload = json.dumps({
-            'type': 'payment_intent.succeeded',
-            'data': {'object': {'id': 'pi_wh_1', 'metadata': {'order_number': order.order_number}}},
-        })
-        with override_settings(STRIPE_WEBHOOK_SECRET=''):
-            response = self.client.post(reverse('stripe_webhook'), payload, content_type='application/json')
-        self.assertEqual(response.status_code, 503)
-        order.refresh_from_db()
-        self.assertNotEqual(order.payment_status, 'paid')
-
-    @override_settings(STRIPE_WEBHOOK_SECRET='whsec_test', STRIPE_SECRET_KEY='sk_test_x')
-    def test_stripe_webhook_fulfills_signed_event(self):
-        order = self._make_order()
-        event = {
-            'type': 'payment_intent.succeeded',
-            'data': {'object': {'id': 'pi_wh_1', 'metadata': {'order_number': order.order_number}}},
-        }
-        with mock.patch('stripe.Webhook.construct_event', return_value=event):
-            response = self.client.post(
-                reverse('stripe_webhook'), json.dumps(event),
-                content_type='application/json', HTTP_STRIPE_SIGNATURE='t=1,v1=sig')
-        self.assertEqual(response.status_code, 200)
-        order.refresh_from_db()
-        self.assertEqual(order.payment_status, 'paid')
-        self.assertEqual(order.payment_transaction_id, 'pi_wh_1')
-
-    @override_settings(STRIPE_WEBHOOK_SECRET='whsec_test', STRIPE_SECRET_KEY='sk_test_x')
-    def test_stripe_webhook_rejects_bad_signature(self):
-        with mock.patch('stripe.Webhook.construct_event', side_effect=ValueError('bad sig')):
-            response = self.client.post(
-                reverse('stripe_webhook'), 'not-json', content_type='application/json')
-        self.assertEqual(response.status_code, 400)
-
-    def test_paypal_webhook_rejects_unverified(self):
-        """Fail-closed: an unverifiable PayPal event never fulfills an order."""
-        order = self._make_order(payment_method='paypal')
-        payload = json.dumps({
-            'event_type': 'PAYMENT.CAPTURE.COMPLETED',
-            'resource': {
-                'id': 'CAP-123',
-                'supplementary_data': {'related_ids': {'order_id': order.order_number}},
-            },
-        })
-        response = self.client.post(reverse('paypal_webhook'), payload, content_type='application/json')
-        self.assertEqual(response.status_code, 400)
-        order.refresh_from_db()
-        self.assertNotEqual(order.payment_status, 'paid')
-
-    def test_paypal_webhook_fulfills_verified_event(self):
-        order = self._make_order(payment_method='paypal')
-        payload = json.dumps({
-            'event_type': 'PAYMENT.CAPTURE.COMPLETED',
-            'resource': {
-                'id': 'CAP-123',
-                'supplementary_data': {'related_ids': {'order_id': order.order_number}},
-            },
-        })
-        with mock.patch('store.views._verify_paypal_webhook', return_value=True):
-            response = self.client.post(reverse('paypal_webhook'), payload, content_type='application/json')
-        self.assertEqual(response.status_code, 200)
-        order.refresh_from_db()
-        self.assertEqual(order.payment_status, 'paid')
-        self.assertEqual(order.payment_transaction_id, 'CAP-123')
-
-    def test_stripe_intent_requires_post_and_501_when_unconfigured(self):
-        order = self._make_order()
-        url = reverse('stripe_create_intent', args=[order.order_number])
-        self.assertEqual(self.client.get(url).status_code, 405)
-        response = self.client.post(url)
-        self.assertEqual(response.status_code, 501)
-        self.assertFalse(response.json()['success'])
-
-    def test_stripe_checkout_redirects_when_unconfigured(self):
-        order = self._make_order()
-        response = self.client.get(reverse('stripe_checkout', args=[order.order_number]))
-        self.assertEqual(response.status_code, 302)
-        self.assertIn(reverse('payment_failed', args=[order.order_number]), response.url)
-
-    def test_paypal_create_order_501_when_unconfigured(self):
-        order = self._make_order(payment_method='paypal')
-        response = self.client.post(reverse('paypal_create_order', args=[order.order_number]))
-        self.assertEqual(response.status_code, 501)
-        self.assertFalse(response.json()['success'])
-
-    def test_paypal_capture_requires_token(self):
-        order = self._make_order(payment_method='paypal')
-        response = self.client.get(reverse('paypal_capture', args=[order.order_number]))
-        self.assertEqual(response.status_code, 302)
-        self.assertIn(reverse('payment_failed', args=[order.order_number]), response.url)
-
-    def test_checkout_hides_unconfigured_gateways(self):
-        """No Stripe/PayPal radios render when their keys are missing (.env)."""
-        user = User.objects.create_user('buyer2', password='pass12345')
+    def test_checkout_only_offers_esewa_and_nay_bank(self):
+        """The checkout radios list exactly eSewa + Nay Bank — no removed gateways."""
+        User.objects.create_user('buyer2', password='pass12345')
         self.client.login(username='buyer2', password='pass12345')
         product = make_product(stock_quantity=10)
         self.client.post(reverse('add_to_cart', args=[product.id]), {'quantity': 1})
         response = self.client.get(reverse('checkout'))
         self.assertEqual(response.status_code, 200)
         html = response.content.decode()
+        self.assertIn('value="esewa"', html)
+        self.assertIn('value="nay_bank"', html)
         self.assertNotIn('value="stripe"', html)
         self.assertNotIn('value="paypal"', html)
-        self.assertIn('value="esewa"', html)
+        self.assertNotIn('value="khalti"', html)
 
-    def test_checkout_rejects_unconfigured_gateway_on_post(self):
-        """POSTing payment_method=stripe without keys fails validation (no order)."""
-        user = User.objects.create_user('buyer3', password='pass12345')
+    def test_checkout_rejects_removed_gateway_on_post(self):
+        """POSTing a removed gateway (stripe) fails validation — no order created."""
+        User.objects.create_user('buyer3', password='pass12345')
         self.client.login(username='buyer3', password='pass12345')
         product = make_product(stock_quantity=10)
         self.client.post(reverse('add_to_cart', args=[product.id]), {'quantity': 1})
@@ -649,11 +557,11 @@ class ApiTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertFalse(response.json()['success'])
 class RealGatewayTests(TestCase):
-    """eSewa/Khalti hit their real sandbox APIs; Nay Bank settles offline.
+    """eSewa hits its real sandbox API; Nay Bank settles offline.
 
     Fulfillment is gated on server-side verification: eSewa needs a valid HMAC
-    signature over the returned fields and a matching amount, and Khalti needs
-    an authoritative lookup — a forged callback must never mark an order paid.
+    signature over the returned fields and a matching amount — a forged
+    callback must never mark an order paid.
     """
 
     def setUp(self):
@@ -704,13 +612,6 @@ class RealGatewayTests(TestCase):
         self.assertEqual(order.payment_method, 'esewa')
         self.assertEqual(order.payment_status, 'pending')
         self.assertFalse(order.is_paid)
-
-    def test_khalti_checkout_disabled_when_unconfigured(self):
-        """With no Khalti secret set, khalti is not even an offered choice."""
-        self.client.login(username='sim_buyer', password='pass12345')
-        self.client.post(reverse('add_to_cart', args=[self.product.id]), {'quantity': 1})
-        html = self.client.get(reverse('checkout')).content.decode()
-        self.assertNotIn('value="khalti"', html)
 
     def _signed_esewa_data(self, order, status='COMPLETE', amount=None):
         from store.payments import _esewa_signature
@@ -764,21 +665,6 @@ class RealGatewayTests(TestCase):
         self.client.get(reverse('esewa_verify'), {'data': data})
         order.refresh_from_db()
         self.assertEqual(order.payment_status, 'paid')
-
-    def test_khalti_verify_ignores_forged_querystring(self):
-        """A hand-crafted ?status=Completed must not settle the order."""
-        self._start_checkout('esewa')
-        order = Order.objects.get()
-        response = self.client.get(reverse('khalti_verify'), {
-            'purchase_order_id': order.order_number,
-            'status': 'Completed', 'transaction_id': 'FORGED',
-        })
-        self.assertRedirects(
-            response, reverse('payment_failed', args=[order.order_number]),
-            fetch_redirect_response=False)
-        order.refresh_from_db()
-        self.assertNotEqual(order.payment_status, 'paid')
-
 
     def test_nay_bank_order_stays_pending_and_shows_account_details(self):
         response = self._start_checkout('nay_bank')

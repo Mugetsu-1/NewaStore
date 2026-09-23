@@ -137,7 +137,7 @@ SiteSettings.get_settings()
 
 import base64
 import json
-from store.payments import _esewa_signature, is_esewa_configured, is_khalti_configured
+from store.payments import _esewa_signature, is_esewa_configured
 
 USERNAME = "verify_flow_user"
 Order.objects.filter(user__username=USERNAME).delete()
@@ -188,8 +188,6 @@ check("checkout offers eSewa", 'value="esewa"' in page and is_esewa_configured()
 check("checkout offers Nay Bank Transfer",
       'value="nay_bank"' in page and "Nay Bank Transfer" in page)
 check("checkout shows no 'Simulated' wording", "Simulated" not in page)
-if not is_khalti_configured():
-    check("Khalti hidden until configured", 'value="khalti"' not in page)
 
 resp = place_order(buyer, "esewa")
 order = Order.objects.filter(user=user).order_by("-id").first()
@@ -224,16 +222,6 @@ check("forged eSewa amount is rejected (order not paid)", not order_f.is_paid,
       order_f.payment_status)
 check("forged eSewa callback redirects to payment_failed",
       resp.status_code == 302 and "/payment/failed/" in resp.url)
-
-if not is_khalti_configured():
-    place_order(buyer, "esewa")
-    order_k = Order.objects.filter(user=user).order_by("-id").first()
-    resp = buyer.get("/khalti-verify/", {
-        "purchase_order_id": order_k.order_number, "status": "Completed",
-    })
-    order_k.refresh_from_db()
-    check("forged Khalti querystring does not settle the order (no server lookup)",
-          not order_k.is_paid, order_k.payment_status)
 
 place_order(buyer, "nay_bank")
 order3 = Order.objects.filter(user=user).order_by("-id").first()

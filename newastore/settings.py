@@ -158,20 +158,6 @@ ESEWA_PRODUCT_CODE = os.environ.get('ESEWA_PRODUCT_CODE', 'EPAYTEST')
 ESEWA_SECRET_KEY = os.environ.get('ESEWA_SECRET_KEY', '8gBm/:&EnhH.1/q')
 ESEWA_FORM_URL = os.environ.get('ESEWA_FORM_URL', 'https://rc-epay.esewa.com.np/api/epay/main/v2/form')
 ESEWA_STATUS_URL = os.environ.get('ESEWA_STATUS_URL', 'https://rc.esewa.com.np/api/epay/transaction/status/')
-KHALTI_SECRET_KEY = os.environ.get('KHALTI_SECRET_KEY', '')
-KHALTI_INITIATE_URL = os.environ.get('KHALTI_INITIATE_URL', 'https://dev.khalti.com/api/v2/epayment/initiate/')
-KHALTI_LOOKUP_URL = os.environ.get('KHALTI_LOOKUP_URL', 'https://dev.khalti.com/api/v2/epayment/lookup/')
-STRIPE_PUBLIC_KEY = os.environ.get('STRIPE_PUBLIC_KEY', '')
-STRIPE_SECRET_KEY = os.environ.get('STRIPE_SECRET_KEY', '')
-STRIPE_WEBHOOK_SECRET = os.environ.get('STRIPE_WEBHOOK_SECRET', '')
-STRIPE_CURRENCY = os.environ.get('STRIPE_CURRENCY', 'usd')
-STRIPE_PRICE_LABEL = os.environ.get('STRIPE_PRICE_LABEL', 'USD $')
-PAYPAL_CLIENT_ID = os.environ.get('PAYPAL_CLIENT_ID', '')
-PAYPAL_SECRET = os.environ.get('PAYPAL_SECRET', '')
-PAYPAL_WEBHOOK_ID = os.environ.get('PAYPAL_WEBHOOK_ID', '')
-PAYPAL_CURRENCY = os.environ.get('PAYPAL_CURRENCY', 'usd')
-PAYPAL_PRICE_LABEL = os.environ.get('PAYPAL_PRICE_LABEL', 'USD $')
-PAYPAL_SANDBOX = os.environ.get('PAYPAL_SANDBOX', 'True') == 'True'
 
 X_FRAME_OPTIONS = 'DENY'
 SECURE_REFERRER_POLICY = 'same-origin'

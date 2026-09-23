@@ -66,7 +66,7 @@ not retried on every startup.
 - **Guest checkout** and account checkout
 - Billing details collected at checkout and stored on the order for invoices
 - Automatic **tax calculation**
-- Payment methods: **eSewa, Khalti, Stripe, PayPal, Bank Transfer**. eSewa (ePay v2) and Khalti (KPG-2) use their **real sandbox APIs** with server-side signature/lookup verification; Stripe and PayPal use their sandbox modes; Nay Bank is an offline bank transfer. No real money moves in sandbox mode.
+- Payment methods: **eSewa and Nay Bank Transfer**. eSewa (ePay v2) uses its **real sandbox API** with server-side HMAC-SHA256 signature verification; Nay Bank is an offline bank transfer settled manually. No real money moves in sandbox mode.
 - Order confirmation + status emails
 
 ### Orders
@@ -195,6 +195,8 @@ python manage.py import_steamspy --pages 5     # import 5 pages then stop
 python manage.py repair_missing_images         # fill in placeholder artwork
 python manage.py materialize_images            # download and store local WebP thumbnails
 python manage.py audit_product_images          # probe stored URLs for dead links
+python manage.py reprice_catalog --dry-run     # preview tiered NPR catalog pricing
+python manage.py reprice_catalog               # apply tiered pricing and feature top AAA titles
 python verify_all.py                           # end-to-end health check against the configured database
 ```
 
@@ -210,8 +212,8 @@ newastore/
 ├── verify_all.py             # end-to-end route, checkout, admin, and configuration checks
 ├── verify_images.py          # inspect stored product artwork
 ├── verify_state.py           # inspect email and checkout state
-├── .claude/
-│   └── launch.json            # local VS Code launch configuration
+├── LICENSE                   # project license
+├── SECURITY.md               # security reporting guidance
 ├── requirements.txt
 ├── .env.example              # safe configuration template
 ├── media/                    # local uploaded images (gitignored)
@@ -257,6 +259,7 @@ newastore/
 | `Coupon`, `CouponUsage` | Discounts with limits & conditions |
 | `Order`, `OrderItem`, `OrderStatusHistory` | Orders with immutable line items & audit trail |
 | `NewsletterSubscriber`, `ContactMessage` | Marketing & support |
+| `SavedBillingDetail` | Reusable signed-in customer billing details |
 | `SiteSettings` | Global store configuration (singleton) |
 
 ---
@@ -278,11 +281,12 @@ Transactional flows that use it: welcome (on signup), password reset, order conf
 - Set `DJANGO_DEBUG=False` and generate a unique, high-entropy
   `DJANGO_SECRET_KEY`.
 - Replace all demo usernames and passwords, including the admin account.
-- Use production credentials for PostgreSQL, SMTP, and each enabled payment
-  gateway. Do not place them in source control.
+- Use production credentials for PostgreSQL, SMTP, and the eSewa gateway. Do not
+  place them in source control.
 - Restrict `DJANGO_ALLOWED_HOSTS` and configure `SITE_BASE_URL` to the HTTPS
   hostname used by the deployment.
-- Configure and verify payment webhooks before accepting online payments.
+- Swap eSewa's RC sandbox product code/secret/URLs for live values before
+  accepting real payments.
 - Run migrations and `collectstatic` as part of deployment; do not use the
   development server in production.
 
@@ -298,12 +302,7 @@ Key settings can be overridden via environment variables:
 | `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT` | PostgreSQL connection |
 | `DJANGO_EMAIL_BACKEND` | Email backend (defaults to console) |
 | `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD` | SMTP |
-| `ESEWA_MERCHANT_CODE`, `ESEWA_SECRET_KEY`, `ESEWA_URL` | eSewa |
-| `KHALTI_PUBLIC_KEY`, `KHALTI_SECRET_KEY` | Khalti |
-| `STRIPE_PUBLIC_KEY`, `STRIPE_SECRET_KEY` | Stripe publishes (pk_/sk_ test keys) |
-| `STRIPE_WEBHOOK_SECRET`, `STRIPE_CURRENCY`, `STRIPE_PRICE_LABEL` | Stripe webhook signer + currency (Stripe has no NPR) |
-| `PAYPAL_CLIENT_ID`, `PAYPAL_SECRET` | PayPal REST app credentials |
-| `PAYPAL_WEBHOOK_ID`, `PAYPAL_CURRENCY`, `PAYPAL_PRICE_LABEL`, `PAYPAL_SANDBOX` | PayPal webhook verification + currency/mode |
+| `ESEWA_PRODUCT_CODE`, `ESEWA_SECRET_KEY`, `ESEWA_FORM_URL`, `ESEWA_STATUS_URL` | eSewa ePay v2 (defaults to the public RC sandbox) |
 | `SITE_BASE_URL` | Absolute base URL used in transactional emails |
 | `USD_TO_NPR` | USD→NPR rate used by importers (default: 135) |
 | `SEED_MAX_REQUESTS` | Max CheapShark requests in the sweep (default: 400) |
@@ -329,12 +328,9 @@ third-party analytics script is loaded when the field is blank.
 1. Set `DJANGO_DEBUG=False` and a strong `DJANGO_SECRET_KEY`.
 2. Configure `DJANGO_ALLOWED_HOSTS` (PostgreSQL is already the default database).
 3. Configure SMTP email credentials.
-4. Configure real payment gateway credentials (eSewa/Khalti live keys).
-5. **Stripe webhooks**: `stripe listen --forward-to https://<host>/webhooks/stripe/`,
-   then store the signing secret in `STRIPE_WEBHOOK_SECRET`.
-6. **PayPal webhooks**: verify a `PAYMENT.CAPTURE.COMPLETED` webhook URL in the
-   PayPal dashboard, paste the webhook ID into `PAYPAL_WEBHOOK_ID`, and set
-   `PAYPAL_SANDBOX=False` for live mode.
-7. Add WhiteNoise (already in `requirements.txt`) or a reverse proxy for static/media.
-8. Run `python manage.py collectstatic`.
-9. Serve behind HTTPS (security settings auto-enable when `DEBUG=False`).
+4. Configure the live eSewa product code + secret and swap the RC sandbox URLs
+   (`ESEWA_FORM_URL`, `ESEWA_STATUS_URL`) for production, then update the Nay Bank
+   account details in `store/payments.py` (`BANK_TRANSFER_DETAILS`).
+5. Add WhiteNoise (already in `requirements.txt`) or a reverse proxy for static/media.
+6. Run `python manage.py collectstatic`.
+7. Serve behind HTTPS (security settings auto-enable when `DEBUG=False`).

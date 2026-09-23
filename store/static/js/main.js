@@ -364,15 +364,6 @@
   }
 
   function syncShopMeta() {
-    const grid = shopResults && shopResults.querySelector('.product-grid');
-    const counter = $('#result-count');
-    if (grid && counter) {
-      const total = grid.dataset.total || '0';
-      counter.textContent = total + ' ' + (total === '1' ? 'game' : 'games') + ' found';
-      counter.classList.remove('pulse');
-      void counter.offsetWidth;
-      counter.classList.add('pulse');
-    }
     startInfiniteScroll();
   }
 
@@ -465,10 +456,7 @@
       const method = checkoutForm.querySelector('input[name="payment_method"]:checked');
       const labels = {
         esewa: 'Opening the eSewa payment screen…',
-        khalti: 'Opening the Khalti payment screen…',
         nay_bank: 'Placing order — bank details next…',
-        stripe: 'Redirecting to card payment…',
-        paypal: 'Redirecting to PayPal…',
       };
       const text = (method && labels[method.value]) || 'Placing your order…';
       showToast(text, 'info');

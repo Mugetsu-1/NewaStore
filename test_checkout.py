@@ -215,7 +215,7 @@ test_data = {
     'terms_accepted': 'on',
 }
 
-payment_methods = ['esewa', 'khalti', 'nay_bank', 'stripe', 'paypal']
+payment_methods = ['esewa', 'nay_bank']
 for pm in payment_methods:
     test_data['payment_method'] = pm
     resp = client.get('/checkout/')

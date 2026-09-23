@@ -74,13 +74,13 @@
             <div class="flex-between mb-3" style="flex-wrap:wrap;gap:12px">
                 <div>
                     <h2 style="font-size:1.4rem">{{ page_title }}</h2>
-                    <p class="text-muted" style="font-size:.88rem" id="result-count">{{ total_count }} game{{ total_count|pluralize }} found</p>
                 </div>
                 <form method="get" id="sort-form">
                     {% for key, val in request.GET.items %}
                         {% if key != 'sort_by' and key != 'page' %}<input type="hidden" name="{{ key }}" value="{{ val }}">{% endif %}
                     {% endfor %}
                     <select name="sort_by" class="form-control" style="min-width:200px">
+                        <option value="featured" {% if not request.GET.sort_by or request.GET.sort_by == 'featured' %}selected{% endif %}>Recommended</option>
                         <option value="-created_at" {% if request.GET.sort_by == '-created_at' %}selected{% endif %}>Newest</option>
                         <option value="price" {% if request.GET.sort_by == 'price' %}selected{% endif %}>Price: Low to High</option>
                         <option value="-price" {% if request.GET.sort_by == '-price' %}selected{% endif %}>Price: High to Low</option>

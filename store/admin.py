@@ -13,7 +13,7 @@ from .models import (
     Category, Tag, Product, ProductImage, ProductVariant, Review, ReviewImage,
     Coupon, CouponUsage, Cart, CartItem, Wishlist, WishlistItem,
     Order, OrderItem, OrderStatusHistory, NewsletterSubscriber,
-    ContactMessage, SiteSettings
+    ContactMessage, SiteSettings, SavedBillingDetail
 )
 
 
@@ -80,11 +80,11 @@ class ProductAdmin(admin.ModelAdmin):
     actions = ['export_products_csv']
     list_display = ['image_thumbnail', 'name', 'sku', 'category', 'price', 'discount_price',
                     'data_source', 'stock_quantity',
-                    'is_active', 'is_featured', 'is_in_stock', 'created_at']
-    list_filter = ['is_active', 'is_featured', 'is_digital', 'category', 'data_source', 'created_at']
+                    'is_active', 'is_featured', 'tier', 'is_in_stock', 'created_at']
+    list_filter = ['is_active', 'is_featured', 'tier', 'is_digital', 'category', 'data_source', 'created_at']
     search_fields = ['name', 'sku', 'barcode', 'steam_app_id']
     prepopulated_fields = {'slug': ('name',)}
-    list_editable = ['is_active', 'is_featured']
+    list_editable = ['is_active', 'is_featured', 'tier']
     list_select_related = ['category']
     filter_horizontal = ['tags']
     inlines = [ProductImageInline, ProductVariantInline]
@@ -107,7 +107,7 @@ class ProductAdmin(admin.ModelAdmin):
             'fields': ('stock_quantity', 'low_stock_threshold', 'track_inventory', 'allow_backorder')
         }),
         ('Settings', {
-            'fields': ('is_active', 'is_featured', 'is_digital')
+            'fields': ('is_active', 'is_featured', 'tier', 'is_digital')
         }),
         ('SEO', {
             'fields': ('meta_title', 'meta_description', 'meta_keywords'),
@@ -475,3 +475,19 @@ class SiteSettingsAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+@admin.register(SavedBillingDetail)
+class SavedBillingDetailAdmin(admin.ModelAdmin):
+    list_display = ['user', 'full_name', 'phone', 'city', 'country', 'updated_at']
+    search_fields = ['user__username', 'user__email', 'full_name', 'email', 'phone']
+    list_select_related = ['user']
+    readonly_fields = ['created_at', 'updated_at']
+    fieldsets = (
+        ('Customer', {'fields': ('user',)}),
+        ('Saved billing details', {
+            'fields': ('full_name', 'phone', 'email', 'address_line_1', 'address_line_2',
+                       'city', 'state', 'postal_code', 'country')
+        }),
+        ('Timestamps', {'fields': ('created_at', 'updated_at'), 'classes': ('collapse',)}),
+    )

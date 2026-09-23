@@ -80,6 +80,17 @@ class Product(models.Model):
     
     is_active = models.BooleanField(default=True)
     is_featured = models.BooleanField(default=False)
+    TIER_AAA, TIER_AA, TIER_INDIE, TIER_FREE = 3, 2, 1, 0
+    TIER_CHOICES = [
+        (TIER_AAA, 'AAA'),
+        (TIER_AA, 'AA'),
+        (TIER_INDIE, 'Indie'),
+        (TIER_FREE, 'Free'),
+    ]
+    tier = models.PositiveSmallIntegerField(
+        default=TIER_INDIE, choices=TIER_CHOICES, db_index=True,
+        help_text="Production tier — drives homepage prominence and default ordering",
+    )
     is_digital = models.BooleanField(default=False)
     
     stock_quantity = models.PositiveIntegerField(default=0)
@@ -99,6 +110,7 @@ class Product(models.Model):
         ordering = ['-created_at']
         indexes = [
             models.Index(fields=['is_active', 'is_featured']),
+            models.Index(fields=['is_active', 'tier']),
             models.Index(fields=['category', 'is_active']),
             models.Index(fields=['slug']),
             models.Index(fields=['is_active', 'created_at']),
@@ -121,6 +133,10 @@ class Product(models.Model):
     @property
     def current_price(self):
         return self.discount_price if self.discount_price else self.price
+
+    @property
+    def tier_label(self):
+        return self.get_tier_display()
 
     @property
     def discount_percentage(self):
@@ -448,11 +464,8 @@ class Order(models.Model):
 
     PAYMENT_METHOD_CHOICES = [
         ('esewa', 'eSewa'),
-        ('khalti', 'Khalti'),
         ('nay_bank', 'Nay Bank Transfer'),
         ('bank_transfer', 'Bank Transfer (legacy)'),
-        ('stripe', 'Stripe'),
-        ('paypal', 'PayPal'),
     ]
 
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders')
@@ -637,3 +650,31 @@ class SiteSettings(models.Model):
     def get_settings(cls):
         settings, _ = cls.objects.get_or_create(pk=1)
         return settings
+
+
+class SavedBillingDetail(models.Model):
+    """A signed-in customer's reusable checkout billing details.
+
+    One row per user (opt-in via the "save these details" checkbox at
+    checkout). Prefills the next checkout so returning customers don't retype
+    their name/address every order.
+    """
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='saved_billing')
+    full_name = models.CharField(max_length=100, blank=True)
+    phone = models.CharField(max_length=20, blank=True)
+    email = models.EmailField(blank=True)
+    address_line_1 = models.CharField(max_length=200, blank=True)
+    address_line_2 = models.CharField(max_length=200, blank=True)
+    city = models.CharField(max_length=100, blank=True)
+    state = models.CharField(max_length=100, blank=True)
+    postal_code = models.CharField(max_length=20, blank=True)
+    country = models.CharField(max_length=100, blank=True, default='Nepal')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Saved Billing Detail"
+        verbose_name_plural = "Saved Billing Details"
+
+    def __str__(self):
+        return f"Billing details for {self.user}"

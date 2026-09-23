@@ -3,7 +3,7 @@ from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from .payments import _available_payment_method_choices
-from .models import Review, Category, NewsletterSubscriber, ContactMessage
+from .models import Review, Category, NewsletterSubscriber, ContactMessage, SavedBillingDetail
 
 
 class CustomRegisterForm(UserCreationForm):
@@ -100,15 +100,17 @@ class CheckoutForm(forms.Form):
 
     PAYMENT_CHOICES = [
         ('esewa', 'eSewa'),
-        ('khalti', 'Khalti'),
         ('nay_bank', 'Nay Bank Transfer'),
-        ('stripe', 'Credit/Debit Card (Stripe)'),
-        ('paypal', 'PayPal'),
     ]
     payment_method = forms.ChoiceField(choices=PAYMENT_CHOICES, widget=forms.RadioSelect, initial='esewa')
 
     order_notes = forms.CharField(widget=forms.Textarea(attrs={'rows': 3}), required=False, label='Order Notes')
     terms_accepted = forms.BooleanField(required=True, label='I agree to the Terms & Conditions')
+    save_details = forms.BooleanField(
+        required=False,
+        initial=True,
+        label='Save these billing details for faster checkout next time',
+    )
 
     def __init__(self, *args, **kwargs):
         self.user = kwargs.pop('user', None)
@@ -122,6 +124,23 @@ class CheckoutForm(forms.Form):
             full_name = (self.user.get_full_name() or '').strip()
             if full_name:
                 self.fields['billing_full_name'].initial = full_name
+
+            saved = SavedBillingDetail.objects.filter(user=self.user).first()
+            if saved:
+                prefill = {
+                    'billing_full_name': saved.full_name,
+                    'billing_phone': saved.phone,
+                    'billing_email': saved.email,
+                    'billing_address_line_1': saved.address_line_1,
+                    'billing_address_line_2': saved.address_line_2,
+                    'billing_city': saved.city,
+                    'billing_state': saved.state,
+                    'billing_postal_code': saved.postal_code,
+                    'billing_country': saved.country,
+                }
+                for field, value in prefill.items():
+                    if value:
+                        self.fields[field].initial = value
 
 
 class NewsletterForm(forms.ModelForm):
@@ -171,6 +190,7 @@ class ProductSearchForm(forms.Form):
     }))
     sort_by = forms.ChoiceField(
         choices=[
+            ('featured', 'Recommended'),
             ('-created_at', 'Newest'),
             ('name', 'Name A-Z'),
             ('-name', 'Name Z-A'),
