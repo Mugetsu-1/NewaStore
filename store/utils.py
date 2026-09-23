@@ -40,7 +40,7 @@ def get_client_ip(request):
 def send_templated_email(subject, template_name, context, to_emails, from_email=None):
     if isinstance(to_emails, str):
         to_emails = [to_emails]
-    from_email = from_email or getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@newastore.com')
+    from_email = from_email or getattr(settings, 'DEFAULT_FROM_EMAIL', 'newastore8@gmail.com')
     html_content = render_to_string(template_name, context)
     text_content = strip_tags(html_content)
     msg = EmailMultiAlternatives(subject, text_content, from_email, to_emails)
@@ -147,8 +147,8 @@ def build_invoice_pdf(order):
         p.drawString(20 * mm, height - 38 * mm, f"Date: {order.created_at.strftime('%Y-%m-%d')}")
         p.drawString(20 * mm, height - 44 * mm, f"Status: {order.get_status_display()}")
 
-        addr = order.shipping_address or order.billing_address or {}
-        p.drawString(120 * mm, height - 32 * mm, "Ship To:")
+        addr = order.billing_address or {}
+        p.drawString(120 * mm, height - 32 * mm, "Bill To:")
         p.drawString(120 * mm, height - 38 * mm, str(addr.get('full_name', '')))
         p.drawString(120 * mm, height - 44 * mm, str(addr.get('address_line_1', '')))
         p.drawString(120 * mm, height - 50 * mm, f"{addr.get('city', '')}, {addr.get('country', '')}")
@@ -176,8 +176,6 @@ def build_invoice_pdf(order):
         p.drawString(130 * mm, y, f"Subtotal: {order.subtotal}")
         y -= 6 * mm
         p.drawString(130 * mm, y, f"Discount: -{order.discount_amount}")
-        y -= 6 * mm
-        p.drawString(130 * mm, y, f"Shipping: {order.shipping_cost}")
         y -= 6 * mm
         p.drawString(130 * mm, y, f"Tax: {order.tax_amount}")
         y -= 8 * mm

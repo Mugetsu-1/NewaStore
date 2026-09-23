@@ -19,8 +19,7 @@
       </tbody>
     </table>
     <p style="text-align:right"><strong>Total: {{ currency_symbol }} {{ order.total|floatformat:2 }}</strong></p>
-    <p><strong>Shipping to:</strong><br>{{ order.shipping_address.full_name }}<br>{{ order.shipping_address.address_line_1 }}<br>{{ order.shipping_address.city }}, {{ order.shipping_address.country }}</p>
-    <p>We'll notify you once your order ships.</p>
+    <p>Your game keys will be delivered to <strong>{{ order.email }}</strong> as soon as your payment is confirmed.</p>
     <p>— The {{ site_settings.site_name|default:"Newa Store" }} Team</p>
   </div>
 </div>

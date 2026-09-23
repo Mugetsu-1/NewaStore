@@ -13,7 +13,7 @@
         <h3>Orders & Payment</h3>
         <details style="padding:14px 0;border-bottom:1px solid var(--border)">
             <summary style="cursor:pointer;font-weight:600">What payment methods do you accept?</summary>
-            <p class="text-muted" style="margin-top:10px">We accept eSewa, Khalti, Credit/Debit cards (Stripe), PayPal, Bank Transfer and Cash on Delivery.</p>
+            <p class="text-muted" style="margin-top:10px">We accept eSewa, Khalti, Credit/Debit cards (Stripe), PayPal and Bank Transfer.</p>
         </details>
         <details style="padding:14px 0;border-bottom:1px solid var(--border)">
             <summary style="cursor:pointer;font-weight:600">Is my payment information secure?</summary>
@@ -21,35 +21,35 @@
         </details>
         <details style="padding:14px 0">
             <summary style="cursor:pointer;font-weight:600">Can I change or cancel my order?</summary>
-            <p class="text-muted" style="margin-top:10px">You can cancel pending, confirmed or processing orders from your account. Once shipped, orders can't be cancelled but may be returned under our return policy.</p>
+            <p class="text-muted" style="margin-top:10px">You can cancel pending, confirmed or processing orders from your account. Once your game keys have been issued and emailed, the order is fulfilled and can't be cancelled — see our Refund Policy for eligible cases.</p>
         </details>
     </div>
 
     <div class="checkout-section">
-        <h3>Shipping & Delivery</h3>
+        <h3>Delivery</h3>
+        <details style="padding:14px 0;border-bottom:1px solid var(--border)">
+            <summary style="cursor:pointer;font-weight:600">How do I receive my game?</summary>
+            <p class="text-muted" style="margin-top:10px">Every product is a digital PC game key. As soon as your payment is confirmed, your key is emailed to you and shown on your order page — there's nothing to ship.</p>
+        </details>
         <details style="padding:14px 0;border-bottom:1px solid var(--border)">
             <summary style="cursor:pointer;font-weight:600">How long does delivery take?</summary>
-            <p class="text-muted" style="margin-top:10px">Orders are processed within 24 hours and delivered in 2–5 business days across Nepal, depending on your location.</p>
-        </details>
-        <details style="padding:14px 0;border-bottom:1px solid var(--border)">
-            <summary style="cursor:pointer;font-weight:600">Do you offer free shipping?</summary>
-            <p class="text-muted" style="margin-top:10px">Yes! Free standard shipping is available on orders over {{ currency_symbol }} {{ site_settings.free_shipping_threshold|default:5000|floatformat:0 }}.</p>
+            <p class="text-muted" style="margin-top:10px">Delivery is instant for confirmed payments. If you pay by bank transfer, your key is released once we verify the deposit.</p>
         </details>
         <details style="padding:14px 0">
-            <summary style="cursor:pointer;font-weight:600">Can I track my order?</summary>
-            <p class="text-muted" style="margin-top:10px">Yes. Once your order ships, you'll receive a tracking number and can follow its progress from your account.</p>
+            <summary style="cursor:pointer;font-weight:600">Is there any delivery fee?</summary>
+            <p class="text-muted" style="margin-top:10px">No. Digital delivery by email is always free.</p>
         </details>
     </div>
 
     <div class="checkout-section">
-        <h3>Returns & Warranty</h3>
+        <h3>Refunds</h3>
         <details style="padding:14px 0;border-bottom:1px solid var(--border)">
-            <summary style="cursor:pointer;font-weight:600">What is your return policy?</summary>
-            <p class="text-muted" style="margin-top:10px">We offer a 7-day return policy on most physical products. Items must be unused and in their original packaging. Digital products are non-refundable once delivered.</p>
+            <summary style="cursor:pointer;font-weight:600">What is your refund policy?</summary>
+            <p class="text-muted" style="margin-top:10px">Because keys are delivered digitally, an order is non-refundable once the key has been revealed or redeemed. If a key is invalid or fails to activate, contact us and we'll replace it or issue a refund. See our <a href="{% url 'refund_policy' %}" style="color:var(--primary)">Refund Policy</a> for full details.</p>
         </details>
         <details style="padding:14px 0">
-            <summary style="cursor:pointer;font-weight:600">Do products come with a warranty?</summary>
-            <p class="text-muted" style="margin-top:10px">All physical products include the manufacturer's warranty. Contact our support team for warranty claims.</p>
+            <summary style="cursor:pointer;font-weight:600">What if my key doesn't work?</summary>
+            <p class="text-muted" style="margin-top:10px">Reach out to our support team with your order number. We'll verify the key and, if there's a problem on our side, send a working replacement or refund you.</p>
         </details>
     </div>
 

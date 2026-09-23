@@ -109,33 +109,71 @@ class Command(BaseCommand):
             return None
 
     def _ensure_superuser(self):
-        """Create an admin account when none exists, so /admin login always works.
+        """Make the admin account match the credentials in the environment.
 
         Credentials come from env (DJANGO_SUPERUSER_USERNAME / _EMAIL /
-        _PASSWORD) and fall back to admin/admin for local dev. A default
-        password is fine for a localhost project but must be changed before any
-        real deployment, so we say so loudly.
+        _PASSWORD), falling back to admin/admin for a bare local checkout.
+        This is authoritative and idempotent: the account is created when
+        missing and otherwise has its email, staff/superuser flags and
+        password reset to match, so /admin login always agrees with .env -
+        including right after a users-only reset. A default password is fine
+        for a localhost project but must be changed before any real
+        deployment, so we say so loudly.
         """
         User = get_user_model()
-        if User.objects.filter(is_superuser=True).exists():
-            self.stdout.write("[1b/6] Admin account: superuser present.")
-            return
         username = os.environ.get("DJANGO_SUPERUSER_USERNAME", "admin")
         email = os.environ.get("DJANGO_SUPERUSER_EMAIL", "admin@newastore.local")
         password = os.environ.get("DJANGO_SUPERUSER_PASSWORD", "admin")
-        # get_or_create on username avoids a race/dup if a non-super admin exists
         user, created = User.objects.get_or_create(
             username=username, defaults={"email": email})
+        user.email = email
         user.is_staff = True
         user.is_superuser = True
         user.set_password(password)
         user.save()
+        verb = "created" if created else "updated"
         self.stdout.write(self.style.SUCCESS(
-            f"[1b/6] Admin account created: username='{username}' password='{password}'"))
+            f"[1b/6] Admin account {verb}: username='{username}'."))
         if password == "admin":
             self.stdout.write(self.style.WARNING(
-                "        Default password in use - change it in /admin before deploying, "
-                "or set DJANGO_SUPERUSER_PASSWORD."))
+                "        Default password in use - set DJANGO_SUPERUSER_PASSWORD "
+                "in .env and change it in /admin before deploying."))
+
+    def _ensure_demo_user(self):
+        """Make the demo customer match DEMO_USER_* from the environment.
+
+        Skipped entirely when DEMO_USER_PASSWORD is unset, so a deployment
+        that wants no demo account simply omits it. Otherwise the account is
+        created or reset in the same authoritative way as the admin account,
+        but as a plain (non-staff) shopper.
+        """
+        password = os.environ.get("DEMO_USER_PASSWORD")
+        if not password:
+            return
+        User = get_user_model()
+        username = os.environ.get("DEMO_USER_USERNAME", "demo")
+        email = os.environ.get("DEMO_USER_EMAIL", "demo@newastore.local")
+        user, created = User.objects.get_or_create(
+            username=username, defaults={"email": email})
+        user.email = email
+        user.is_staff = False
+        user.is_superuser = False
+        user.set_password(password)
+        user.save()
+        verb = "created" if created else "updated"
+        self.stdout.write(self.style.SUCCESS(
+            f"[1b/6] Demo customer {verb}: username='{username}'."))
+
+    def _ensure_site_email(self):
+        """Seed the store's public contact email so the DB value is correct."""
+        from store.models import SiteSettings
+        target = "newastore8@gmail.com"
+        site = SiteSettings.get_settings()
+        if site.email != target:
+            site.email = target
+            site.save(update_fields=["email"])
+            self.stdout.write(self.style.SUCCESS(
+                f"[1b/6] Site contact email set to {target}."))
 
     def _normalize_dead_capsule_urls(self):
         """Bulk-swap the dead `capsule_616x353.jpg` pattern for `header.jpg`.
@@ -175,8 +213,10 @@ class Command(BaseCommand):
             else:
                 self.stdout.write("[1/6] Migrations: up to date.")
 
-        # ---- 1b. admin account (so the /admin login always works) -----------
+        # ---- 1b. accounts + store email (so /admin login always works) -----
         self._ensure_superuser()
+        self._ensure_demo_user()
+        self._ensure_site_email()
 
         # ---- 2. catalog import (only when the DB is empty) -------------------
         product_count = Product.objects.count()

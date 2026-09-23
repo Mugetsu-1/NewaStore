@@ -158,7 +158,7 @@ EMAIL_PORT = int(os.environ.get('EMAIL_PORT', 587))
 EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True') == 'True'
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
-DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'Newa Store <noreply@newastore.com>')
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'Newa Store <newastore8@gmail.com>')
 
 # Payments
 # ---------------------------------------------------------------------------
@@ -229,13 +229,11 @@ JAZZMIN_SETTINGS = {
         "store.Order": "fas fa-shopping-bag",
         "store.Coupon": "fas fa-ticket-alt",
         "store.Review": "fas fa-star",
-        "store.Address": "fas fa-map-marker-alt",
         "store.Cart": "fas fa-shopping-cart",
         "store.Wishlist": "fas fa-heart",
         "store.NewsletterSubscriber": "fas fa-envelope",
         "store.ContactMessage": "fas fa-comments",
         "store.SiteSettings": "fas fa-cog",
-        "store.ShippingMethod": "fas fa-truck",
     },
     "default_icon_parents": "fas fa-chevron-circle-right",
     "default_icon_children": "fas fa-circle",

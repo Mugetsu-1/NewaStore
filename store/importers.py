@@ -307,7 +307,6 @@ def upsert_games(games, data_source, update_existing=True, on_progress=None):
             cost_price=usd_to_npr(price_usd * Decimal('0.7')) if price_usd else None,
             category=category,
             is_digital=True,
-            requires_shipping=False,
             track_inventory=False,
             steam_app_id=appid,
             external_url=product_external_url(appid, game_id),

@@ -56,15 +56,11 @@
     <div class="topbar">
         <div class="container">
             <div class="topbar-links">
-                {% if site_settings.free_shipping_threshold and site_settings.free_shipping_threshold > 0 %}
-                    <span><i class="fas fa-truck"></i> Free shipping over {{ currency_symbol }} {{ site_settings.free_shipping_threshold|floatformat:0 }}</span>
-                {% else %}
-                    <span><i class="fas fa-key"></i> Instant digital delivery by email</span>
-                {% endif %}
+                <span><i class="fas fa-key"></i> Instant digital delivery by email</span>
                 <span><i class="fas fa-phone"></i> {{ site_settings.phone|default:'+977-9800000000' }}</span>
             </div>
             <div class="topbar-links">
-                <a href="{% url 'shipping_returns' %}">Track Order</a>
+                <a href="{% url 'refund_policy' %}">Refund Policy</a>
                 <a href="{% url 'faq' %}">Help</a>
                 <a href="#" data-theme-toggle><i class="fas fa-sun"></i> Theme</a>
             </div>
@@ -152,7 +148,6 @@
                         <a href="{% url 'profile' %}"><i class="fas fa-user"></i> Dashboard</a>
                         <a href="{% url 'order_history' %}"><i class="fas fa-box"></i> My Orders</a>
                         <a href="{% url 'wishlist' %}"><i class="fas fa-heart"></i> Wishlist</a>
-                        <a href="{% url 'address_list' %}"><i class="fas fa-map-marker-alt"></i> Addresses</a>
                         <a href="{% url 'change_password' %}"><i class="fas fa-lock"></i> Password</a>
                         <form action="{% url 'logout' %}" method="post">{% csrf_token %}
                             <button type="submit" style="background:none;border:none;width:100%;text-align:left;padding:9px 14px;border-radius:8px;color:var(--text-muted);cursor:pointer;font-size:.9rem"><i class="fas fa-sign-out-alt"></i> Logout</button>
@@ -248,13 +243,13 @@
                         <a href="{% url 'about' %}">About Us</a>
                         <a href="{% url 'contact' %}">Contact</a>
                         <a href="{% url 'faq' %}">FAQ</a>
-                        <a href="{% url 'shipping_returns' %}">Shipping & Returns</a>
+                        <a href="{% url 'refund_policy' %}">Refund Policy</a>
                     </div>
                 </div>
                 <div>
                     <h4>Contact</h4>
                     <div class="footer-links">
-                        <span class="text-muted"><i class="fas fa-envelope"></i> {{ site_settings.email|default:'support@newastore.com' }}</span>
+                        <span class="text-muted"><i class="fas fa-envelope"></i> {{ site_settings.email|default:'newastore8@gmail.com' }}</span>
                         <span class="text-muted"><i class="fas fa-phone"></i> {{ site_settings.phone|default:'+977-9800000000' }}</span>
                         <span class="text-muted"><i class="fas fa-map-marker-alt"></i> {{ site_settings.address|default:'Kathmandu, Nepal' }}</span>
                     </div>
@@ -266,7 +261,6 @@
                     <i class="fas fa-credit-card" title="Cards"></i>
                     <i class="fas fa-mobile-alt" title="eSewa / Khalti"></i>
                     <i class="fab fa-cc-paypal" title="PayPal"></i>
-                    <i class="fas fa-truck" title="Cash on Delivery"></i>
                 </div>
             </div>
         </div>

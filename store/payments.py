@@ -101,7 +101,6 @@ def available_payment_methods():
         ('esewa', SIMULATED_GATEWAYS['esewa']['label'], False),
         ('khalti', SIMULATED_GATEWAYS['khalti']['label'], False),
         ('nay_bank', 'Nay Bank Transfer', False),
-        ('cod', 'Cash on Delivery', False),
         ('stripe', 'Credit/Debit Card (Stripe)', True),
         ('paypal', 'PayPal', True),
     ]

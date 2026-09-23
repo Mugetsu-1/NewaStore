@@ -1,7 +1,6 @@
 import base64
 import json
 import uuid
-from decimal import Decimal
 
 from django.conf import settings
 from django.contrib import messages
@@ -27,12 +26,12 @@ from .payments import (
 )
 from .models import (
     Product, Category, Tag, ProductVariant, ProductImage, Review,
-    Coupon, CouponUsage, Address, Wishlist, WishlistItem,
-    Order, OrderItem, OrderStatusHistory, ShippingMethod,
+    Coupon, CouponUsage, Wishlist, WishlistItem,
+    Order, OrderItem, OrderStatusHistory,
     NewsletterSubscriber, ContactMessage, SiteSettings, CartItem, Cart,
 )
 from .forms import (
-    CustomRegisterForm, UserProfileForm, ReviewForm, AddressForm,
+    CustomRegisterForm, UserProfileForm, ReviewForm,
     CheckoutForm, CouponApplyForm, NewsletterForm, ContactForm,
     ProductSearchForm, OrderStatusUpdateForm,
 )
@@ -425,30 +424,12 @@ def cart_mini(request):
 # CHECKOUT & PAYMENTS
 # ============================================================
 
-def _get_digital_shipping_method():
-    """Free 'Digital Delivery' method used for digital-only carts."""
-    method, _ = ShippingMethod.objects.get_or_create(
-        name='Digital Delivery',
-        defaults=dict(description='Game keys delivered by email — instantly',
-                      price=Decimal('0'), estimated_days_min=0,
-                      estimated_days_max=0, is_active=True, sort_order=0))
-    return method
-
-
-def _cart_all_digital(manager):
-    """True when every item in the cart is a digital product."""
-    items = list(manager.items)
-    return bool(items) and all(not item.product.requires_shipping for item in items)
-
-
 def checkout(request):
     manager = CartManager(request)
     if manager.is_empty:
         messages.warning(request, 'Your cart is empty.')
         return redirect('cart')
 
-    user = request.user if request.user.is_authenticated else None
-    all_digital = _cart_all_digital(manager)
     if request.method == 'POST':
         form = CheckoutForm(request.POST, user=request.user, cart=manager.cart)
         if form.is_valid():
@@ -462,9 +443,6 @@ def checkout(request):
         'items': manager.items,
         'subtotal': manager.subtotal,
         'discount': manager.discount,
-        'shipping_methods': ShippingMethod.objects.filter(is_active=True),
-        'all_digital': all_digital,
-        'digital_method': _get_digital_shipping_method() if all_digital else None,
         'page_title': 'Checkout',
     }
     return render(request, 'store/checkout.html', context)
@@ -485,35 +463,11 @@ def _create_order_and_pay(request, form, manager):
         'postal_code': data['billing_postal_code'],
         'country': data['billing_country'],
     }
-    if data['shipping_option'] == CheckoutForm.SHIPPING_SAME_AS_BILLING:
-        shipping = dict(billing)
-    else:
-        shipping = {
-            'full_name': data['shipping_full_name'],
-            'phone': data['shipping_phone'],
-            'email': billing['email'],
-            'address_line_1': data['shipping_address_line_1'],
-            'address_line_2': data.get('shipping_address_line_2', ''),
-            'city': data['shipping_city'],
-            'state': data['shipping_state'],
-            'postal_code': data['shipping_postal_code'],
-            'country': data['shipping_country'],
-        }
-
-    # Digital-only carts always use the free Digital Delivery method
-    if _cart_all_digital(manager):
-        shipping_method = _get_digital_shipping_method()
-    else:
-        shipping_method = data['shipping_method']
     subtotal = manager.subtotal
     discount = manager.discount
-    shipping_cost = shipping_method.price
-    if shipping_method.free_shipping_threshold and subtotal >= shipping_method.free_shipping_threshold:
-        shipping_cost = Decimal('0')
-
     taxable = subtotal - discount
     tax = calculate_tax(taxable)
-    total = taxable + shipping_cost + tax
+    total = taxable + tax
 
     with transaction.atomic():
         order = Order.objects.create(
@@ -521,15 +475,12 @@ def _create_order_and_pay(request, form, manager):
             guest_email=billing['email'] if not user else '',
             guest_phone=billing['phone'] if not user else '',
             billing_address=billing,
-            shipping_address=shipping,
             subtotal=subtotal,
             discount_amount=discount,
-            shipping_cost=shipping_cost,
             tax_amount=tax,
             total=total,
             coupon=manager.cart.coupon,
             payment_method=data['payment_method'],
-            shipping_method=shipping_method.name,
             notes=data.get('order_notes', ''),
             ip_address=get_client_ip(request),
             user_agent=request.META.get('HTTP_USER_AGENT', '')[:500],
@@ -561,9 +512,6 @@ def _create_order_and_pay(request, form, manager):
                 )
             Coupon.objects.filter(pk=order.coupon.pk).update(used_count=F('used_count') + 1)
 
-        if data.get('save_info') and user:
-            _save_addresses(user, billing, shipping)
-
     # Clear the cart now that order exists
     manager.clear()
 
@@ -574,11 +522,6 @@ def _create_order_and_pay(request, form, manager):
         # eSewa / Khalti are demo wallets: render a local, self-contained
         # payment screen instead of redirecting to the real gateway.
         return _initiate_simulated_gateway(request, order, payment_method)
-    elif payment_method == 'cod':
-        order.status = 'confirmed'
-        order.confirmed_at = timezone.now()
-        order.save()
-        return redirect('order_success', order_number=order.order_number)
     elif payment_method == 'nay_bank':
         # Offline settlement: keep the order pending until an admin verifies
         # the deposit. Bank details are shown on the order success page.
@@ -595,18 +538,6 @@ def _create_order_and_pay(request, form, manager):
     else:
         # Any other gateway keeps the pending page
         return redirect('order_success', order_number=order.order_number)
-
-
-def _save_addresses(user, billing, shipping):
-    for addr_type, payload in [('billing', billing), ('shipping', shipping)]:
-        if not user.addresses.filter(address_type=addr_type).exists():
-            Address.objects.create(
-                user=user, address_type=addr_type,
-                full_name=payload['full_name'], phone=payload['phone'], email=payload['email'],
-                address_line_1=payload['address_line_1'], address_line_2=payload.get('address_line_2', ''),
-                city=payload['city'], state=payload['state'], postal_code=payload['postal_code'],
-                country=payload['country'], is_default=True,
-            )
 
 
 def _initiate_simulated_gateway(request, order, gateway):
@@ -965,11 +896,6 @@ def order_detail(request, order_number):
     return render(request, 'store/order_detail.html', {'order': order, 'page_title': f'Order {order.order_number}'})
 
 
-def order_tracking(request, order_number):
-    order = get_object_or_404(Order.objects.prefetch_related('status_history'), order_number=order_number)
-    return render(request, 'store/order_tracking.html', {'order': order, 'page_title': 'Track Order'})
-
-
 @login_required
 def download_invoice(request, order_number):
     order = get_object_or_404(Order.objects.prefetch_related('items'), order_number=order_number)
@@ -1019,10 +945,9 @@ def profile(request):
     context = {
         'order_count': orders.count(),
         'pending_count': orders.filter(status='pending').count(),
-        'completed_count': orders.filter(status='delivered').count(),
+        'completed_count': orders.filter(payment_status='paid').count(),
         'wishlist_count': Wishlist.objects.filter(user=request.user).first().items.count() if Wishlist.objects.filter(user=request.user).exists() else 0,
         'recent_orders': orders[:5],
-        'addresses': request.user.addresses.all()[:3],
         'page_title': 'My Account',
     }
     return render(request, 'store/profile.html', context)
@@ -1053,61 +978,6 @@ def change_password(request):
     else:
         form = PasswordChangeForm(request.user)
     return render(request, 'store/change_password.html', {'form': form, 'page_title': 'Change Password'})
-
-
-@login_required
-def address_list(request):
-    addresses = request.user.addresses.all()
-    return render(request, 'store/address_list.html', {'addresses': addresses, 'page_title': 'My Addresses'})
-
-
-@login_required
-def address_create(request):
-    if request.method == 'POST':
-        form = AddressForm(request.POST)
-        if form.is_valid():
-            address = form.save(commit=False)
-            address.user = request.user
-            address.save()
-            messages.success(request, 'Address added.')
-            return redirect('address_list')
-    else:
-        form = AddressForm()
-    return render(request, 'store/address_form.html', {'form': form, 'page_title': 'Add Address'})
-
-
-@login_required
-def address_edit(request, pk):
-    address = get_object_or_404(Address, pk=pk, user=request.user)
-    if request.method == 'POST':
-        form = AddressForm(request.POST, instance=address)
-        if form.is_valid():
-            form.save()
-            messages.success(request, 'Address updated.')
-            return redirect('address_list')
-    else:
-        form = AddressForm(instance=address)
-    return render(request, 'store/address_form.html', {'form': form, 'address': address, 'page_title': 'Edit Address'})
-
-
-@require_POST
-@login_required
-def address_delete(request, pk):
-    address = get_object_or_404(Address, pk=pk, user=request.user)
-    address.delete()
-    messages.success(request, 'Address deleted.')
-    return redirect('address_list')
-
-
-@require_POST
-@login_required
-def address_set_default(request, pk):
-    address = get_object_or_404(Address, pk=pk, user=request.user)
-    Address.objects.filter(user=request.user, address_type=address.address_type, is_default=True).update(is_default=False)
-    address.is_default = True
-    address.save()
-    messages.success(request, 'Default address updated.')
-    return redirect('address_list')
 
 
 @login_required
@@ -1182,7 +1052,7 @@ def add_review(request, slug):
         review = form.save(commit=False)
         review.user = request.user
         review.product = product
-        if product.order_items.filter(order__user=request.user, order__status='delivered').exists():
+        if product.order_items.filter(order__user=request.user, order__payment_status='paid').exists():
             review.is_verified_purchase = True
         review.save()
         messages.success(request, 'Thank you! Your review is awaiting approval.')
@@ -1287,8 +1157,8 @@ def terms(request):
     return render(request, 'store/pages/terms.html', {'page_title': 'Terms & Conditions'})
 
 
-def shipping_returns(request):
-    return render(request, 'store/pages/shipping_returns.html', {'page_title': 'Shipping & Returns'})
+def refund_policy(request):
+    return render(request, 'store/pages/refund_policy.html', {'page_title': 'Refund Policy'})
 
 
 @require_POST

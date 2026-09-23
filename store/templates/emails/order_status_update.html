@@ -9,7 +9,6 @@
   <div style="padding:24px">
     <p>Hi {{ order.customer_name }},</p>
     <p>Your order <strong>{{ order.order_number }}</strong> status has been updated to <strong>{{ order.get_status_display }}</strong>.</p>
-    {% if order.tracking_number %}<p>Tracking number: <strong>{{ order.tracking_number }}</strong>{% if order.tracking_url %} — <a href="{{ order.tracking_url }}">Track shipment</a>{% endif %}</p>{% endif %}
     <p>— The {{ site_settings.site_name|default:"Newa Store" }} Team</p>
   </div>
 </div>

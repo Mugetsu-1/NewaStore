@@ -11,8 +11,8 @@ from django.urls import reverse
 from django.utils.safestring import mark_safe
 from .models import (
     Category, Tag, Product, ProductImage, ProductVariant, Review, ReviewImage,
-    Coupon, CouponUsage, Address, Cart, CartItem, Wishlist, WishlistItem,
-    Order, OrderItem, OrderStatusHistory, ShippingMethod, NewsletterSubscriber,
+    Coupon, CouponUsage, Cart, CartItem, Wishlist, WishlistItem,
+    Order, OrderItem, OrderStatusHistory, NewsletterSubscriber,
     ContactMessage, SiteSettings
 )
 
@@ -104,10 +104,10 @@ class ProductAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
         ('Inventory', {
-            'fields': ('stock_quantity', 'low_stock_threshold', 'track_inventory', 'allow_backorder', 'weight', 'dimensions')
+            'fields': ('stock_quantity', 'low_stock_threshold', 'track_inventory', 'allow_backorder')
         }),
         ('Settings', {
-            'fields': ('is_active', 'is_featured', 'is_digital', 'requires_shipping')
+            'fields': ('is_active', 'is_featured', 'is_digital')
         }),
         ('SEO', {
             'fields': ('meta_title', 'meta_description', 'meta_keywords'),
@@ -224,15 +224,6 @@ class CouponUsageAdmin(admin.ModelAdmin):
     readonly_fields = ['coupon', 'user', 'order', 'discount_amount', 'used_at']
 
 
-@admin.register(Address)
-class AddressAdmin(admin.ModelAdmin):
-    list_display = ['user', 'address_type', 'full_name', 'city', 'state', 'country', 'is_default', 'created_at']
-    list_filter = ['address_type', 'is_default', 'country', 'state']
-    search_fields = ['user__username', 'full_name', 'city', 'phone', 'email']
-    list_editable = ['is_default']
-    list_select_related = ['user']
-
-
 class CartItemInline(admin.TabularInline):
     model = CartItem
     extra = 0
@@ -284,7 +275,7 @@ class OrderAdmin(admin.ModelAdmin):
     list_editable = ['status', 'payment_status']
     list_select_related = ['user', 'coupon']
     inlines = [OrderItemInline, OrderStatusHistoryInline]
-    readonly_fields = ['order_number', 'created_at', 'updated_at', 'confirmed_at', 'shipped_at', 'delivered_at',
+    readonly_fields = ['order_number', 'created_at', 'updated_at', 'confirmed_at',
                        'ip_address', 'user_agent']
     fieldsets = (
         ('Order Information', {
@@ -292,14 +283,10 @@ class OrderAdmin(admin.ModelAdmin):
                        'payment_transaction_id', 'coupon')
         }),
         ('Pricing', {
-            'fields': ('subtotal', 'discount_amount', 'shipping_cost', 'tax_amount', 'total')
+            'fields': ('subtotal', 'discount_amount', 'tax_amount', 'total')
         }),
-        ('Addresses', {
-            'fields': ('billing_address', 'shipping_address'),
-            'classes': ('collapse',)
-        }),
-        ('Shipping', {
-            'fields': ('shipping_method', 'tracking_number', 'tracking_url'),
+        ('Billing Address', {
+            'fields': ('billing_address',),
             'classes': ('collapse',)
         }),
         ('Notes', {
@@ -307,12 +294,12 @@ class OrderAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
         ('Metadata', {
-            'fields': ('ip_address', 'user_agent', 'created_at', 'updated_at', 'confirmed_at', 'shipped_at', 'delivered_at'),
+            'fields': ('ip_address', 'user_agent', 'created_at', 'updated_at', 'confirmed_at'),
             'classes': ('collapse',)
         }),
     )
 
-    actions = ['mark_confirmed', 'mark_processing', 'mark_shipped', 'mark_delivered', 'mark_cancelled', 'export_orders_csv']
+    actions = ['mark_confirmed', 'mark_processing', 'mark_completed', 'mark_cancelled', 'export_orders_csv']
 
     def mark_confirmed(self, request, queryset):
         for order in queryset:
@@ -326,21 +313,11 @@ class OrderAdmin(admin.ModelAdmin):
             order.save()
     mark_processing.short_description = 'Mark as Processing'
 
-    def mark_shipped(self, request, queryset):
-        from django.utils import timezone
+    def mark_completed(self, request, queryset):
         for order in queryset:
-            order.status = 'shipped'
-            order.shipped_at = timezone.now()
+            order.status = 'completed'
             order.save()
-    mark_shipped.short_description = 'Mark as Shipped'
-
-    def mark_delivered(self, request, queryset):
-        from django.utils import timezone
-        for order in queryset:
-            order.status = 'delivered'
-            order.delivered_at = timezone.now()
-            order.save()
-    mark_delivered.short_description = 'Mark as Delivered'
+    mark_completed.short_description = 'Mark as Completed'
 
     def mark_cancelled(self, request, queryset):
         for order in queryset:
@@ -366,14 +343,14 @@ class OrderAdmin(admin.ModelAdmin):
         response['Content-Disposition'] = 'attachment; filename="orders.csv"'
         writer = csv.writer(response)
         writer.writerow(['Order Number', 'Status', 'Payment Method', 'Payment Status', 'Subtotal',
-                         'Shipping', 'Tax', 'Total', 'Email', 'Created'])
+                         'Tax', 'Total', 'Email', 'Created'])
         for order in queryset.select_related('user'):
             writer.writerow([
                 order.order_number,
                 order.get_status_display(),
                 order.get_payment_method_display(),
                 order.get_payment_status_display(),
-                order.subtotal, order.shipping_cost, order.tax_amount, order.total,
+                order.subtotal, order.tax_amount, order.total,
                 order.email or '',
                 order.created_at.isoformat(),
             ])
@@ -394,14 +371,6 @@ class OrderStatusHistoryAdmin(admin.ModelAdmin):
     list_filter = ['status', 'created_at']
     search_fields = ['order__order_number']
     readonly_fields = ['order', 'status', 'notes', 'created_by', 'created_at']
-
-
-@admin.register(ShippingMethod)
-class ShippingMethodAdmin(admin.ModelAdmin):
-    list_display = ['name', 'price', 'estimated_days_min', 'estimated_days_max', 'is_active', 'sort_order', 'free_shipping_threshold']
-    list_filter = ['is_active']
-    list_editable = ['is_active', 'sort_order']
-    search_fields = ['name', 'description']
 
 
 @admin.register(NewsletterSubscriber)
@@ -494,7 +463,7 @@ class SiteSettingsAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
         ('Settings', {
-            'fields': ('maintenance_mode', 'maintenance_message', 'free_shipping_threshold', 'tax_rate', 
+            'fields': ('maintenance_mode', 'maintenance_message', 'tax_rate',
                        'currency', 'currency_symbol', 'allow_guest_checkout', 'require_account_for_digital')
         }),
         ('Timestamps', {

@@ -150,9 +150,7 @@
                 {% if product.published_at %}<div><strong>Released:</strong> {{ product.published_at|date:"F j, Y" }}</div>{% endif %}
                 {% if product.category %}<div><strong>Category:</strong> <a href="{{ product.category.get_absolute_url }}">{{ product.category.name }}</a></div>{% endif %}
                 {% if product.tags.exists %}<div><strong>Genres:</strong> {% for tag in product.tags.all %}<a href="{% url 'tag_detail' tag.slug %}">{{ tag.name }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</div>{% endif %}
-                {% if product.weight %}<div><strong>Weight:</strong> {{ product.weight }} kg</div>{% endif %}
-                {% if product.dimensions %}<div><strong>Dimensions:</strong> {{ product.dimensions }}</div>{% endif %}
-                <div><strong>Delivery:</strong> {% if product.requires_shipping %}Standard delivery{% else %}Digital key by email — instant{% endif %}</div>
+                <div><strong>Delivery:</strong> Digital key by email — instant</div>
             </div>
         </div>
     </div>
@@ -163,7 +161,6 @@
             <button class="tab-btn active" data-tab="tab-desc">Description</button>
             <button class="tab-btn" data-tab="tab-specs">Specifications</button>
             <button class="tab-btn" data-tab="tab-reviews">Reviews ({{ product.review_count }})</button>
-            <button class="tab-btn" data-tab="tab-shipping">Shipping & Returns</button>
         </div>
         <div class="tab-panel active" id="tab-desc">
             <div class="prose">{{ product.description|linebreaks }}</div>
@@ -175,10 +172,7 @@
                     {% if product.barcode %}<tr><th>Barcode</th><td>{{ product.barcode }}</td></tr>{% endif %}
                     <tr><th>Category</th><td>{{ product.category.name|default:'—' }}</td></tr>
                     <tr><th>Release Date</th><td>{{ product.published_at|date:"F j, Y"|default:'—' }}</td></tr>
-                    {% if product.weight %}<tr><th>Weight</th><td>{{ product.weight }} kg</td></tr>{% endif %}
-                    {% if product.dimensions %}<tr><th>Dimensions</th><td>{{ product.dimensions }}</td></tr>{% endif %}
                     <tr><th>Digital Product</th><td>{{ product.is_digital|yesno:'Yes,No' }}</td></tr>
-                    <tr><th>Requires Shipping</th><td>{{ product.requires_shipping|yesno:'Yes,No' }}</td></tr>
                 </table>
             </div>
         </div>
@@ -244,16 +238,6 @@
                         {% endif %}
                     </div>
                 </div>
-            </div>
-        </div>
-        <div class="tab-panel" id="tab-shipping">
-            <div class="prose">
-                <h3>Shipping</h3>
-                <p>We deliver across Nepal within 2–5 business days. Free standard shipping on orders over {{ currency_symbol }} {{ site_settings.free_shipping_threshold|default:5000|floatformat:0 }}. Orders are processed within 24 hours.</p>
-                <h3>Returns</h3>
-                <p>We offer a 7-day return policy on most items. Products must be unused and in original packaging. Digital products are non-refundable once delivered.</p>
-                <h3>Warranty</h3>
-                <p>All physical products come with the manufacturer's warranty. Contact support for warranty claims.</p>
             </div>
         </div>
     </div>

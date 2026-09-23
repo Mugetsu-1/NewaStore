@@ -59,24 +59,13 @@
         <aside class="summary">
             <h3 style="margin-bottom:18px">Order Summary</h3>
 
-            {% if site_settings.free_shipping_threshold %}
-            {% with remaining=site_settings.free_shipping_threshold|add:"-1" %}
             <div class="free-ship-bar">
-                {% if cart.subtotal >= site_settings.free_shipping_threshold %}
-                    <span><i class="fas fa-check-circle" style="color:var(--primary)"></i> You've unlocked free shipping!</span>
-                    <div class="bar"><span style="width:100%"></span></div>
-                {% else %}
-                    {% widthratio cart.subtotal site_settings.free_shipping_threshold 100 as pct %}
-                    <span>Add <strong>{{ currency_symbol }} {{ site_settings.free_shipping_threshold|floatformat:2 }}</strong> more for free shipping. (Current: {{ currency_symbol }} {{ cart.subtotal|floatformat:2 }})</span>
-                    <div class="bar"><span style="width:{{ pct }}%"></span></div>
-                {% endif %}
+                <span><i class="fas fa-key" style="color:var(--primary)"></i> Instant digital delivery — game keys sent to your email.</span>
             </div>
-            {% endwith %}
-            {% endif %}
 
             <div class="summary-row"><span>Subtotal (<span data-cart-count>{{ cart.items_count }}</span> items)</span><span id="cart-subtotal">{{ currency_symbol }} {{ cart.subtotal|floatformat:2 }}</span></div>
             <div class="summary-row"><span>Discount</span><span id="cart-discount" style="color:var(--primary)">-{{ currency_symbol }} {{ cart.discount_amount|floatformat:2 }}</span></div>
-            <div class="summary-row"><span>Shipping</span><span>Calculated at checkout</span></div>
+            <div class="summary-row"><span>Delivery</span><span>Free — digital</span></div>
             <div class="summary-row total"><span>Total</span><span class="val" id="cart-total">{{ currency_symbol }} {{ cart.total|floatformat:2 }}</span></div>
 
             <!-- Coupon -->

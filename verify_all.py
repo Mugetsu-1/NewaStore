@@ -23,7 +23,7 @@ from django.contrib.auth.models import User  # noqa: E402
 from django.test import Client  # noqa: E402
 
 from store.models import (  # noqa: E402
-    Cart, Order, Product, ProductImage, ShippingMethod, SiteSettings,
+    Cart, Order, Product, ProductImage, SiteSettings,
 )
 
 PASS, FAIL = [], []
@@ -96,7 +96,7 @@ routes = [
     ("faq", "/faq/"),
     ("privacy", "/privacy/"),
     ("terms", "/terms/"),
-    ("shipping returns", "/shipping-returns/"),
+    ("refund policy", "/refund-policy/"),
     ("password reset", "/password-reset/"),
     ("sitemap", "/sitemap.xml"),
     ("robots", "/robots.txt"),
@@ -131,10 +131,6 @@ print("=" * 68)
 print("4. CHECKOUT — SIMULATED eSEWA / KHALTI + NAY BANK")
 print("=" * 68)
 SiteSettings.get_settings()
-if not ShippingMethod.objects.filter(is_active=True).exists():
-    ShippingMethod.objects.create(
-        name="Standard", price=500, estimated_days_min=2,
-        estimated_days_max=5, is_active=True)
 
 USERNAME = "verify_flow_user"
 Order.objects.filter(user__username=USERNAME).delete()
@@ -145,10 +141,7 @@ user = User.objects.create_user(USERNAME, "verify@example.com", "verify12345")
 user.first_name, user.last_name = "Verify", "Flow"
 user.save()
 
-shipping = ShippingMethod.objects.filter(is_active=True).first()
-checkout_product = (
-    Product.objects.filter(is_active=True, requires_shipping=True).first() or product
-)
+checkout_product = Product.objects.filter(is_active=True).first() or product
 
 
 def place_order(client, method):
@@ -158,8 +151,7 @@ def place_order(client, method):
         "billing_email": "verify@example.com", "billing_address_line_1": "Test St",
         "billing_address_line_2": "", "billing_city": "Kathmandu",
         "billing_state": "Bagmati", "billing_postal_code": "44600",
-        "billing_country": "Nepal", "shipping_option": "same",
-        "shipping_method": shipping.id, "payment_method": method,
+        "billing_country": "Nepal", "payment_method": method,
         "order_notes": "", "terms_accepted": "on",
     })
 
@@ -171,7 +163,7 @@ buyer.post(f"/cart/add/{checkout_product.id}/", {"quantity": 1})
 page = buyer.get("/checkout/").content.decode()
 check("checkout page renders", "Place Order" in page)
 for value, label in [("esewa", "eSewa (Simulated)"), ("khalti", "Khalti (Simulated)"),
-                     ("nay_bank", "Nay Bank Transfer"), ("cod", "Cash on Delivery")]:
+                     ("nay_bank", "Nay Bank Transfer")]:
     check(f"checkout offers {value}", f'value="{value}"' in page and label in page)
 
 # --- eSewa simulated page
@@ -218,17 +210,10 @@ check("bank page shows Nay Bank details",
       "Nay Bank" in bank_page and "0123456789012" in bank_page)
 check("bank page shows the order reference", order3.order_number in bank_page)
 
-# --- COD
-place_order(buyer, "cod")
-order4 = Order.objects.filter(user=user).order_by("-id").first()
-check("COD order confirmed immediately", order4.status == "confirmed")
-
 for label, url in [("order history", "/orders/"),
                    ("order detail", f"/orders/{order.order_number}/"),
-                   ("order tracking", f"/orders/{order.order_number}/track/"),
                    ("invoice", f"/orders/{order.order_number}/invoice/"),
                    ("profile", "/profile/"),
-                   ("addresses", "/addresses/"),
                    ("wishlist", "/wishlist/")]:
     r = buyer.get(url)
     check(f"{label} (logged in)", r.status_code == 200, f"HTTP {r.status_code}")

@@ -2,11 +2,11 @@ from django import forms
 from django.contrib.auth.forms import UserCreationForm, UserChangeForm, PasswordResetForm
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
-from .payments import available_payment_methods, _available_payment_method_choices
+from .payments import _available_payment_method_choices
 from .models import (
     Product, ProductImage, ProductVariant, Review, Category, Tag,
-    Coupon, Address, Cart, CartItem, Wishlist, WishlistItem,
-    Order, OrderItem, ShippingMethod, NewsletterSubscriber, ContactMessage, SiteSettings
+    Coupon, Cart, CartItem, Wishlist, WishlistItem,
+    Order, OrderItem, NewsletterSubscriber, ContactMessage, SiteSettings
 )
 
 
@@ -89,8 +89,7 @@ class ProductForm(forms.ModelForm):
             'short_description', 'description',
             'price', 'discount_price', 'cost_price',
             'stock_quantity', 'low_stock_threshold', 'track_inventory', 'allow_backorder',
-            'weight', 'dimensions',
-            'is_active', 'is_featured', 'is_digital', 'requires_shipping',
+            'is_active', 'is_featured', 'is_digital',
             'meta_title', 'meta_description', 'meta_keywords',
         ]
         widgets = {
@@ -216,19 +215,6 @@ class CouponForm(forms.ModelForm):
         return cleaned_data
 
 
-class AddressForm(forms.ModelForm):
-    class Meta:
-        model = Address
-        fields = [
-            'address_type', 'full_name', 'phone', 'email',
-            'address_line_1', 'address_line_2', 'city', 'state', 'postal_code', 'country',
-            'is_default',
-        ]
-        widgets = {
-            'address_line_2': forms.TextInput(attrs={'placeholder': 'Apartment, suite, etc. (optional)'}),
-        }
-
-
 class CartItemForm(forms.ModelForm):
     class Meta:
         model = CartItem
@@ -246,13 +232,6 @@ class CouponApplyForm(forms.Form):
 
 
 class CheckoutForm(forms.Form):
-    SHIPPING_SAME_AS_BILLING = 'same'
-    SHIPPING_DIFFERENT = 'different'
-    SHIPPING_CHOICES = [
-        (SHIPPING_SAME_AS_BILLING, 'Same as billing address'),
-        (SHIPPING_DIFFERENT, 'Use a different shipping address'),
-    ]
-
     # Billing Address
     billing_full_name = forms.CharField(max_length=100, label='Full Name')
     billing_phone = forms.CharField(max_length=20, label='Phone Number')
@@ -263,131 +242,44 @@ class CheckoutForm(forms.Form):
     billing_state = forms.CharField(max_length=100, label='State/Province')
     billing_postal_code = forms.CharField(max_length=20, label='Postal Code')
     billing_country = forms.CharField(max_length=100, initial='Nepal', label='Country')
-    
-    # Shipping Options
-    shipping_option = forms.ChoiceField(choices=SHIPPING_CHOICES, widget=forms.RadioSelect, initial=SHIPPING_SAME_AS_BILLING)
-    
-    # Shipping Address (conditional)
-    shipping_full_name = forms.CharField(max_length=100, required=False, label='Full Name')
-    shipping_phone = forms.CharField(max_length=20, required=False, label='Phone Number')
-    shipping_address_line_1 = forms.CharField(max_length=200, required=False, label='Address Line 1')
-    shipping_address_line_2 = forms.CharField(max_length=200, required=False, label='Address Line 2 (Optional)')
-    shipping_city = forms.CharField(max_length=100, required=False, label='City')
-    shipping_state = forms.CharField(max_length=100, required=False, label='State/Province')
-    shipping_postal_code = forms.CharField(max_length=20, required=False, label='Postal Code')
-    shipping_country = forms.CharField(max_length=100, required=False, initial='Nepal', label='Country')
-    
-    # Shipping Method
-    shipping_method = forms.ModelChoiceField(
-        queryset=ShippingMethod.objects.none(),
-        empty_label=None,
-        widget=forms.RadioSelect,
-        required=True
-    )
-    
+
     # Payment Method
     PAYMENT_CHOICES = [
         ('esewa', 'eSewa (Simulated)'),
         ('khalti', 'Khalti (Simulated)'),
         ('nay_bank', 'Nay Bank Transfer'),
-        ('cod', 'Cash on Delivery'),
         ('stripe', 'Credit/Debit Card (Stripe)'),
         ('paypal', 'PayPal'),
     ]
-    payment_method = forms.ChoiceField(choices=PAYMENT_CHOICES, widget=forms.RadioSelect, initial='cod')
+    payment_method = forms.ChoiceField(choices=PAYMENT_CHOICES, widget=forms.RadioSelect, initial='esewa')
 
     # Additional
     order_notes = forms.CharField(widget=forms.Textarea(attrs={'rows': 3}), required=False, label='Order Notes')
-    save_info = forms.BooleanField(required=False, label='Save this information for next time')
     terms_accepted = forms.BooleanField(required=True, label='I agree to the Terms & Conditions')
 
     def __init__(self, *args, **kwargs):
         self.user = kwargs.pop('user', None)
         self.cart = kwargs.pop('cart', None)
         super().__init__(*args, **kwargs)
-        self.fields['shipping_method'].queryset = ShippingMethod.objects.filter(is_active=True)
         # Gateways that are not configured are shown as disabled hints rather than
         # silently disappearing (so the checkout UI does not look degraded before
         # keys are added to .env). Only actually-configured methods are selectable.
         self.fields['payment_method'].choices = _available_payment_method_choices()
 
-        # Digital-only carts: no shipping needed, pre-fill digital delivery
-        if self.cart and self.cart.is_all_digital():
-            self.fields['shipping_option'].required = False
-            self.fields['shipping_option'].widget = forms.HiddenInput()
-            self.fields['shipping_method'].required = False
-            self.fields['shipping_method'].widget = forms.HiddenInput()
-            # Lazy import to avoid circular import with views
-            from .views import _get_digital_shipping_method
-            digital_method = _get_digital_shipping_method()
-            self.fields['shipping_method'].initial = digital_method.pk
-            self.fields['shipping_method'].queryset = ShippingMethod.objects.filter(pk=digital_method.pk)
-            self.fields['billing_postal_code'].required = False
-            self.fields['billing_country'].required = False
-            self.fields['shipping_full_name'].required = False
-            self.fields['shipping_phone'].required = False
-            self.fields['shipping_address_line_1'].required = False
-            self.fields['shipping_address_line_2'].required = False
-            self.fields['shipping_city'].required = False
-            self.fields['shipping_state'].required = False
-            self.fields['shipping_postal_code'].required = False
-            self.fields['shipping_country'].required = False
-            self.initial['shipping_option'] = self.SHIPPING_SAME_AS_BILLING
-            self.initial['billing_country'] = 'Nepal'
-
         if self.user and getattr(self.user, 'is_authenticated', False):
-            addresses = self.user.addresses.all()
-            if addresses.exists():
-                default_billing = addresses.filter(address_type='billing', is_default=True).first()
-                default_shipping = addresses.filter(address_type='shipping', is_default=True).first()
-                
-                if default_billing:
-                    for field in ['full_name', 'phone', 'email', 'address_line_1', 'address_line_2', 
-                                 'city', 'state', 'postal_code', 'country']:
-                        self.fields[f'billing_{field}'].initial = getattr(default_billing, field)
-                
-                if default_shipping:
-                    for field in ['full_name', 'phone', 'address_line_1', 'address_line_2', 
-                                 'city', 'state', 'postal_code', 'country']:
-                        self.fields[f'shipping_{field}'].initial = getattr(default_shipping, field)
-
-    def clean(self):
-        cleaned_data = super().clean()
-        shipping_option = cleaned_data.get('shipping_option')
-        
-        if shipping_option == self.SHIPPING_DIFFERENT:
-            shipping_fields = [
-                'shipping_full_name', 'shipping_phone', 'shipping_address_line_1',
-                'shipping_city', 'shipping_state', 'shipping_postal_code', 'shipping_country'
-            ]
-            for field in shipping_fields:
-                if not cleaned_data.get(field):
-                    self.add_error(field, 'This field is required when using a different shipping address.')
-        
-        return cleaned_data
+            if self.user.email:
+                self.fields['billing_email'].initial = self.user.email
+            full_name = (self.user.get_full_name() or '').strip()
+            if full_name:
+                self.fields['billing_full_name'].initial = full_name
 
 
 class OrderStatusUpdateForm(forms.ModelForm):
     class Meta:
         model = Order
-        fields = ['status', 'payment_status', 'tracking_number', 'tracking_url', 'shipping_method', 'internal_notes']
+        fields = ['status', 'payment_status', 'internal_notes']
         widgets = {
             'internal_notes': forms.Textarea(attrs={'rows': 3}),
-        }
-
-
-class ShippingMethodForm(forms.ModelForm):
-    class Meta:
-        model = ShippingMethod
-        fields = [
-            'name', 'description', 'price', 'estimated_days_min', 'estimated_days_max',
-            'is_active', 'sort_order', 'free_shipping_threshold',
-            'applicable_countries', 'weight_based', 'weight_rates',
-        ]
-        widgets = {
-            'description': forms.Textarea(attrs={'rows': 3}),
-            'applicable_countries': forms.Textarea(attrs={'rows': 3, 'placeholder': '["Nepal", "India"]'}),
-            'weight_rates': forms.Textarea(attrs={'rows': 3, 'placeholder': '{"0-1": 100, "1-5": 200, "5-10": 350}'}),
         }
 
 

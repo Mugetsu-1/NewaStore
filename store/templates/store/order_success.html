@@ -48,7 +48,6 @@
             <div style="max-width:320px;margin-left:auto;margin-top:20px">
                 <div class="summary-row"><span>Subtotal</span><span>{{ currency_symbol }} {{ order.subtotal|floatformat:2 }}</span></div>
                 <div class="summary-row"><span>Discount</span><span>-{{ currency_symbol }} {{ order.discount_amount|floatformat:2 }}</span></div>
-                <div class="summary-row"><span>Shipping</span><span>{{ currency_symbol }} {{ order.shipping_cost|floatformat:2 }}</span></div>
                 <div class="summary-row"><span>Tax</span><span>{{ currency_symbol }} {{ order.tax_amount|floatformat:2 }}</span></div>
                 <div class="summary-row total"><span>Total</span><span class="val">{{ currency_symbol }} {{ order.total|floatformat:2 }}</span></div>
             </div>
@@ -95,7 +94,6 @@
         <div class="flex-center gap-2 mt-4" style="flex-wrap:wrap">
             {% if user.is_authenticated %}
             <a href="{% url 'order_detail' order.order_number %}" class="btn btn-primary"><i class="fas fa-box"></i> View Order</a>
-            <a href="{% url 'order_tracking' order.order_number %}" class="btn btn-outline"><i class="fas fa-truck"></i> Track Order</a>
             {% endif %}
             <a href="{% url 'product_list' %}" class="btn btn-outline">Continue Shopping</a>
         </div>

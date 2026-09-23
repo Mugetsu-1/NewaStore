@@ -12,8 +12,8 @@ from datetime import timedelta
 
 from .models import (
     Category, Tag, Product, ProductImage, ProductVariant, Review, Coupon,
-    Address, Cart, CartItem, Wishlist, Order, OrderItem, OrderStatusHistory,
-    ShippingMethod, NewsletterSubscriber, SiteSettings, ContactMessage,
+    Cart, CartItem, Wishlist, Order, OrderItem, OrderStatusHistory,
+    NewsletterSubscriber, SiteSettings, ContactMessage,
 )
 from .cart import CartManager
 from .utils import mark_order_paid
@@ -177,7 +177,7 @@ class ViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
 
     def test_static_pages(self):
-        for name in ['about', 'contact', 'faq', 'privacy', 'terms', 'shipping_returns']:
+        for name in ['about', 'contact', 'faq', 'privacy', 'terms', 'refund_policy']:
             response = self.client.get(reverse(name))
             self.assertEqual(response.status_code, 200, name)
 
@@ -199,9 +199,6 @@ class ViewTests(TestCase):
 class CheckoutTests(TestCase):
     def setUp(self):
         SiteSettings.get_settings()
-        ShippingMethod.objects.create(
-            name='Standard', price=Decimal('100'), estimated_days_min=3,
-            estimated_days_max=5, is_active=True)
         self.product = make_product(stock_quantity=10)
         self.user = User.objects.create_user('buyer', password='pass12345',
                                               email='buyer@example.com')
@@ -213,14 +210,12 @@ class CheckoutTests(TestCase):
             'billing_address_line_2': '', 'billing_city': 'Kathmandu',
             'billing_state': 'Bagmati', 'billing_postal_code': '44600',
             'billing_country': 'Nepal',
-            'shipping_option': 'same',
-            'shipping_method': ShippingMethod.objects.first().id,
-            'payment_method': 'cod',
+            'payment_method': 'nay_bank',
             'order_notes': '',
             'terms_accepted': 'on',
         }
 
-    def test_cod_checkout_creates_order(self):
+    def test_nay_bank_checkout_creates_order(self):
         self.client.login(username='buyer', password='pass12345')
         self.client.post(reverse('add_to_cart', args=[self.product.id]), {'quantity': 2})
         response = self.client.post(reverse('checkout'), self._checkout_payload())
@@ -228,36 +223,25 @@ class CheckoutTests(TestCase):
         order = Order.objects.first()
         self.assertIsNotNone(order)
         self.assertEqual(order.items.count(), 1)
-        self.assertEqual(order.status, 'confirmed')
-        self.assertEqual(order.payment_method, 'cod')
-        # cart should be cleared
+        self.assertEqual(order.status, 'pending')
+        self.assertEqual(order.payment_method, 'nay_bank')
         self.assertEqual(Cart.objects.first().items_count, 0)
-        # stock reduced
         self.product.refresh_from_db()
         self.assertEqual(self.product.stock_quantity, 8)
 
-    def test_digital_checkout_uses_free_digital_delivery(self):
-        """Digital-only carts skip paid shipping and use the free Digital Delivery method."""
+    def test_digital_checkout_has_no_shipping_cost(self):
+        """Digital keys have no delivery fee: order total is subtotal + tax only."""
         product = make_product(
-            name='Digital Key', is_digital=True, requires_shipping=False,
+            name='Digital Key', is_digital=True,
             stock_quantity=0, track_inventory=False,
         )
         self.client.login(username='buyer', password='pass12345')
         self.client.post(reverse('add_to_cart', args=[product.id]), {'quantity': 1})
-        # Digital carts use the free Digital Delivery method
-        digital_method = ShippingMethod.objects.get_or_create(
-            name='Digital Delivery',
-            defaults=dict(description='Instant digital delivery', price=Decimal('0'), is_active=True,
-                          estimated_days_min=0, estimated_days_max=0)
-        )[0]
-        payload = self._checkout_payload()
-        payload['shipping_method'] = digital_method.id
-        response = self.client.post(reverse('checkout'), payload)
+        response = self.client.post(reverse('checkout'), self._checkout_payload())
         self.assertEqual(response.status_code, 302)
         order = Order.objects.filter(items__product_name='Digital Key').first()
         self.assertIsNotNone(order)
-        self.assertEqual(order.shipping_method, 'Digital Delivery')
-        self.assertEqual(order.shipping_cost, Decimal('0'))
+        self.assertEqual(order.total, order.subtotal + order.tax_amount)
 
     def test_guest_checkout(self):
         self.client.post(reverse('add_to_cart', args=[self.product.id]), {'quantity': 1})
@@ -268,16 +252,15 @@ class CheckoutTests(TestCase):
         self.assertIsNone(order.user)
         self.assertEqual(order.guest_email, 'buyer@example.com')
 
-    def test_order_totals_include_tax_and_shipping(self):
+    def test_order_totals_include_tax_no_shipping(self):
         self.client.login(username='buyer', password='pass12345')
         self.client.post(reverse('add_to_cart', args=[self.product.id]), {'quantity': 1})
         self.client.post(reverse('checkout'), self._checkout_payload())
         order = Order.objects.first()
-        # product price 800 (discounted) + 100 shipping, tax 13% on 800
+        # product price 800 (discounted), tax 13% on 800, no shipping
         self.assertEqual(order.subtotal, Decimal('800'))
-        self.assertEqual(order.shipping_cost, Decimal('100'))
         self.assertEqual(order.tax_amount, Decimal('104.00'))
-        self.assertEqual(order.total, Decimal('1004.00'))
+        self.assertEqual(order.total, Decimal('904.00'))
 
 
 class WishlistTests(TestCase):
@@ -460,15 +443,12 @@ class PaymentFulfillmentTests(TestCase):
         self.client.login(username='buyer2', password='pass12345')
         product = make_product(stock_quantity=10)
         self.client.post(reverse('add_to_cart', args=[product.id]), {'quantity': 1})
-        ShippingMethod.objects.create(
-            name='Standard', price=Decimal('0'), estimated_days_min=1,
-            estimated_days_max=3, is_active=True)
         response = self.client.get(reverse('checkout'))
         self.assertEqual(response.status_code, 200)
         html = response.content.decode()
         self.assertNotIn('value="stripe"', html)
         self.assertNotIn('value="paypal"', html)
-        self.assertIn('value="cod"', html)
+        self.assertIn('value="esewa"', html)
 
     def test_checkout_rejects_unconfigured_gateway_on_post(self):
         """POSTing payment_method=stripe without keys fails validation (no order)."""
@@ -476,17 +456,12 @@ class PaymentFulfillmentTests(TestCase):
         self.client.login(username='buyer3', password='pass12345')
         product = make_product(stock_quantity=10)
         self.client.post(reverse('add_to_cart', args=[product.id]), {'quantity': 1})
-        shipping = ShippingMethod.objects.create(
-            name='Standard', price=Decimal('0'), estimated_days_min=1,
-            estimated_days_max=3, is_active=True)
         payload = {
             'billing_full_name': 'Buyer Three', 'billing_phone': '9800000000',
             'billing_email': 'buyer3@example.com', 'billing_address_line_1': 'Main St',
             'billing_address_line_2': '', 'billing_city': 'Kathmandu',
             'billing_state': 'Bagmati', 'billing_postal_code': '44600',
             'billing_country': 'Nepal',
-            'shipping_option': 'same',
-            'shipping_method': shipping.id,
             'payment_method': 'stripe',
             'order_notes': '', 'terms_accepted': 'on',
         }
@@ -647,9 +622,6 @@ class SimulatedGatewayTests(TestCase):
 
     def setUp(self):
         SiteSettings.get_settings()
-        self.shipping = ShippingMethod.objects.create(
-            name='Standard', price=Decimal('100'), estimated_days_min=3,
-            estimated_days_max=5, is_active=True)
         self.product = make_product(stock_quantity=10)
         self.user = User.objects.create_user(
             'sim_buyer', password='pass12345', email='sim@example.com')
@@ -664,8 +636,6 @@ class SimulatedGatewayTests(TestCase):
             'billing_address_line_2': '', 'billing_city': 'Kathmandu',
             'billing_state': 'Bagmati', 'billing_postal_code': '44600',
             'billing_country': 'Nepal',
-            'shipping_option': 'same',
-            'shipping_method': self.shipping.id,
             'payment_method': payment_method,
             'order_notes': '', 'terms_accepted': 'on',
         }
@@ -784,8 +754,8 @@ class SimulatedGatewayTests(TestCase):
         self.assertIn(order.order_number, html)
 
     def test_nay_bank_details_only_render_for_bank_orders(self):
-        """A COD order must not display bank transfer instructions."""
-        self._start_checkout('cod')
+        """A non-bank (eSewa) order must not display bank transfer instructions."""
+        self._start_checkout('esewa')
         order = Order.objects.get()
         html = self.client.get(
             reverse('order_success', args=[order.order_number])).content.decode()

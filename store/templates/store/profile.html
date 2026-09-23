@@ -23,7 +23,7 @@
             <div class="stat-grid mb-4">
                 <div class="stat-card"><div class="num">{{ order_count }}</div><div class="label"><i class="fas fa-box"></i> Total Orders</div></div>
                 <div class="stat-card"><div class="num">{{ pending_count }}</div><div class="label"><i class="fas fa-clock"></i> Pending</div></div>
-                <div class="stat-card"><div class="num">{{ completed_count }}</div><div class="label"><i class="fas fa-check"></i> Delivered</div></div>
+                <div class="stat-card"><div class="num">{{ completed_count }}</div><div class="label"><i class="fas fa-check"></i> Completed</div></div>
                 <div class="stat-card"><div class="num">{{ wishlist_count }}</div><div class="label"><i class="fas fa-heart"></i> Wishlist</div></div>
             </div>
 
@@ -53,23 +53,6 @@
                 <p class="text-muted">No orders yet. <a href="{% url 'product_list' %}" style="color:var(--primary)">Start shopping</a>.</p>
                 {% endif %}
             </div>
-
-            {% if addresses %}
-            <div class="checkout-section">
-                <div class="flex-between mb-3">
-                    <h3 style="margin:0">Saved Addresses</h3>
-                    <a href="{% url 'address_list' %}" class="btn btn-ghost btn-sm">Manage <i class="fas fa-arrow-right"></i></a>
-                </div>
-                <div class="stat-grid">
-                    {% for address in addresses %}
-                    <div class="stat-card" style="padding:16px">
-                        <strong>{{ address.get_address_type_display }}</strong>{% if address.is_default %} <span class="badge badge-success">Default</span>{% endif %}
-                        <p class="text-muted" style="font-size:.85rem;margin-top:6px">{{ address.full_name }}<br>{{ address.address_line_1 }}<br>{{ address.city }}, {{ address.country }}</p>
-                    </div>
-                    {% endfor %}
-                </div>
-            </div>
-            {% endif %}
         </div>
     </div>
 </div>

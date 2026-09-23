@@ -42,7 +42,6 @@ urlpatterns = [
     # Orders
     path('orders/', views.order_history, name='order_history'),
     path('orders/<str:order_number>/', views.order_detail, name='order_detail'),
-    path('orders/<str:order_number>/track/', views.order_tracking, name='order_tracking'),
     path('orders/<str:order_number>/invoice/', views.download_invoice, name='download_invoice'),
     path('orders/<str:order_number>/cancel/', views.cancel_order, name='cancel_order'),
     path('orders/<str:order_number>/reorder/', views.reorder, name='reorder'),
@@ -52,13 +51,6 @@ urlpatterns = [
     path('profile/edit/', views.profile_edit, name='profile_edit'),
     path('profile/password/', views.change_password, name='change_password'),
     path('reviews/', views.my_reviews, name='my_reviews'),
-
-    # Addresses
-    path('addresses/', views.address_list, name='address_list'),
-    path('addresses/add/', views.address_create, name='address_create'),
-    path('addresses/<int:pk>/edit/', views.address_edit, name='address_edit'),
-    path('addresses/<int:pk>/delete/', views.address_delete, name='address_delete'),
-    path('addresses/<int:pk>/default/', views.address_set_default, name='address_set_default'),
 
     # Wishlist
     path('wishlist/', views.wishlist_view, name='wishlist'),
@@ -85,7 +77,7 @@ urlpatterns = [
     path('faq/', views.faq, name='faq'),
     path('privacy/', views.privacy, name='privacy'),
     path('terms/', views.terms, name='terms'),
-    path('shipping-returns/', views.shipping_returns, name='shipping_returns'),
+    path('refund-policy/', views.refund_policy, name='refund_policy'),
     path('newsletter/subscribe/', views.newsletter_subscribe, name='newsletter_subscribe'),
     path('robots.txt', views.robots_txt, name='robots_txt'),
 ]

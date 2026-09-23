@@ -82,10 +82,6 @@ class Product(models.Model):
     is_active = models.BooleanField(default=True)
     is_featured = models.BooleanField(default=False)
     is_digital = models.BooleanField(default=False)
-    requires_shipping = models.BooleanField(default=True)
-    
-    weight = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, help_text="Weight in kg")
-    dimensions = models.CharField(max_length=100, blank=True, help_text="L x W x H in cm")
     
     stock_quantity = models.PositiveIntegerField(default=0)
     low_stock_threshold = models.PositiveIntegerField(default=5)
@@ -293,7 +289,6 @@ class Coupon(models.Model):
     DISCOUNT_TYPES = [
         ('percentage', 'Percentage'),
         ('fixed', 'Fixed Amount'),
-        ('free_shipping', 'Free Shipping'),
     ]
 
     code = models.CharField(max_length=50, unique=True)
@@ -365,42 +360,6 @@ class CouponUsage(models.Model):
     used_at = models.DateTimeField(auto_now_add=True)
 
 
-class Address(models.Model):
-    ADDRESS_TYPES = [
-        ('billing', 'Billing'),
-        ('shipping', 'Shipping'),
-    ]
-
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='addresses')
-    address_type = models.CharField(max_length=10, choices=ADDRESS_TYPES, default='shipping')
-    
-    full_name = models.CharField(max_length=100)
-    phone = models.CharField(max_length=20)
-    email = models.EmailField()
-    
-    address_line_1 = models.CharField(max_length=200)
-    address_line_2 = models.CharField(max_length=200, blank=True)
-    city = models.CharField(max_length=100)
-    state = models.CharField(max_length=100)
-    postal_code = models.CharField(max_length=20)
-    country = models.CharField(max_length=100, default='Nepal')
-    
-    is_default = models.BooleanField(default=False)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ['-is_default', '-created_at']
-
-    def __str__(self):
-        return f"{self.full_name} - {self.city}, {self.country}"
-
-    def save(self, *args, **kwargs):
-        if self.is_default:
-            Address.objects.filter(user=self.user, address_type=self.address_type, is_default=True).update(is_default=False)
-        super().save(*args, **kwargs)
-
-
 class Cart(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, null=True, blank=True, related_name='cart')
     session_key = models.CharField(max_length=40, null=True, blank=True, unique=True)
@@ -435,11 +394,6 @@ class Cart(models.Model):
     @property
     def total(self):
         return self.subtotal - self.discount_amount
-
-    def is_all_digital(self):
-        """True when every item in the cart is a digital product (no shipping needed)."""
-        items = list(self.items.all())
-        return bool(items) and all(not item.product.requires_shipping for item in items)
 
 
 class CartItem(models.Model):
@@ -494,11 +448,9 @@ class Order(models.Model):
         ('pending', 'Pending'),
         ('confirmed', 'Confirmed'),
         ('processing', 'Processing'),
-        ('shipped', 'Shipped'),
-        ('delivered', 'Delivered'),
+        ('completed', 'Completed'),
         ('cancelled', 'Cancelled'),
         ('refunded', 'Refunded'),
-        ('returned', 'Returned'),
     ]
 
     PAYMENT_STATUS_CHOICES = [
@@ -516,7 +468,6 @@ class Order(models.Model):
         ('bank_transfer', 'Bank Transfer (legacy)'),
         ('stripe', 'Stripe'),
         ('paypal', 'PayPal'),
-        ('cod', 'Cash on Delivery'),
     ]
 
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders')
@@ -527,24 +478,18 @@ class Order(models.Model):
     
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS_CHOICES, default='pending')
-    payment_method = models.CharField(max_length=20, choices=PAYMENT_METHOD_CHOICES, default='cod')
+    payment_method = models.CharField(max_length=20, choices=PAYMENT_METHOD_CHOICES, default='esewa')
     payment_transaction_id = models.CharField(max_length=100, blank=True)
     
     subtotal = models.DecimalField(max_digits=10, decimal_places=2)
     discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    shipping_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     tax_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     total = models.DecimalField(max_digits=10, decimal_places=2)
     
     coupon = models.ForeignKey(Coupon, on_delete=models.SET_NULL, null=True, blank=True)
     
     billing_address = models.JSONField(default=dict)
-    shipping_address = models.JSONField(default=dict)
-    
-    shipping_method = models.CharField(max_length=100, blank=True)
-    tracking_number = models.CharField(max_length=100, blank=True)
-    tracking_url = models.URLField(blank=True)
-    
+
     notes = models.TextField(blank=True)
     internal_notes = models.TextField(blank=True)
     
@@ -554,8 +499,6 @@ class Order(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     confirmed_at = models.DateTimeField(null=True, blank=True)
-    shipped_at = models.DateTimeField(null=True, blank=True)
-    delivered_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['-created_at']
@@ -638,27 +581,6 @@ class OrderStatusHistory(models.Model):
         return f"{self.order.order_number} - {self.status}"
 
 
-class ShippingMethod(models.Model):
-    name = models.CharField(max_length=100)
-    description = models.TextField(blank=True)
-    price = models.DecimalField(max_digits=10, decimal_places=2)
-    estimated_days_min = models.PositiveIntegerField()
-    estimated_days_max = models.PositiveIntegerField()
-    is_active = models.BooleanField(default=True)
-    sort_order = models.IntegerField(default=0)
-    free_shipping_threshold = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    
-    applicable_countries = models.JSONField(default=list, blank=True)
-    weight_based = models.BooleanField(default=False)
-    weight_rates = models.JSONField(default=dict, blank=True)
-
-    class Meta:
-        ordering = ['sort_order', 'name']
-
-    def __str__(self):
-        return self.name
-
-
 class NewsletterSubscriber(models.Model):
     email = models.EmailField(unique=True)
     is_active = models.BooleanField(default=True)
@@ -711,8 +633,7 @@ class SiteSettings(models.Model):
     
     maintenance_mode = models.BooleanField(default=False)
     maintenance_message = models.TextField(blank=True)
-    
-    free_shipping_threshold = models.DecimalField(max_digits=10, decimal_places=2, default=5000)
+
     tax_rate = models.DecimalField(max_digits=5, decimal_places=2, default=13)
     currency = models.CharField(max_length=3, default='NPR')
     currency_symbol = models.CharField(max_length=5, default='Rs.')

@@ -89,11 +89,9 @@ def order_status_badge(status):
         'pending': 'warning',
         'confirmed': 'info',
         'processing': 'info',
-        'shipped': 'primary',
-        'delivered': 'success',
+        'completed': 'success',
         'cancelled': 'danger',
         'refunded': 'secondary',
-        'returned': 'secondary',
     }
     color = colors.get(status, 'secondary')
     return mark_safe(f'<span class="badge badge-{color}">{status.title()}</span>')

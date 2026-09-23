@@ -22,11 +22,10 @@
     </table>
     <p style="text-align:right"><strong>Subtotal: {{ currency_symbol }} {{ order.subtotal|floatformat:2 }}</strong></p>
     {% if order.discount_amount %}<p style="text-align:right;color:#16a34a"><strong>Discount: -{{ currency_symbol }} {{ order.discount_amount|floatformat:2 }}</strong></p>{% endif %}
-    {% if order.shipping_cost %}<p style="text-align:right">Shipping: {{ currency_symbol }} {{ order.shipping_cost|floatformat:2 }}</p>{% endif %}
     <p style="text-align:right">Tax: {{ currency_symbol }} {{ order.tax_amount|floatformat:2 }}</p>
     <p style="text-align:right;font-size:18px"><strong>Total: {{ currency_symbol }} {{ order.total|floatformat:2 }}</strong></p>
-    <p>Your order is confirmed and will be delivered according to the chosen method.
-       For digital items, delivery instructions are on your <a href="{{ order_url }}">order page</a>.</p>
+    <p>Your payment is confirmed. Your game keys are available on your
+       <a href="{{ order_url }}">order page</a> and have been sent to your email.</p>
     <p>— The {{ site_settings.site_name|default:"Newa Store" }} Team</p>
   </div>
 </div>

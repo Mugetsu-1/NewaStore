@@ -202,7 +202,7 @@ def contact(request):
         f'New contact message: {msg.subject}',
         'emails/contact_notification.html',
         {'contact': msg},
-        [SiteSettings.get_settings().email or 'noreply@newastore.com'],
+        [SiteSettings.get_settings().email or 'newastore8@gmail.com'],
     )
     return Response({'success': True, 'message': 'Thank you! We will get back to you soon.'}, status=201)
 

@@ -15,8 +15,13 @@ if admin_user:
     print(f'Admin: {admin_user.username}')
     print(f'is_staff: {admin_user.is_staff}')
     print(f'is_superuser: {admin_user.is_superuser}')
-    logged_in = authenticate(username='admin', password='admin123')
-    print(f'Login with admin123: {logged_in is not None}')
+    admin_username = os.environ.get('DJANGO_SUPERUSER_USERNAME', 'admin')
+    admin_password = os.environ.get('DJANGO_SUPERUSER_PASSWORD', '')
+    if admin_password:
+        logged_in = authenticate(username=admin_username, password=admin_password)
+        print(f'Login with .env credentials: {logged_in is not None}')
+    else:
+        print('Login check skipped: DJANGO_SUPERUSER_PASSWORD not set in environment')
 
 print()
 print('=== PRODUCT IMAGES ===')

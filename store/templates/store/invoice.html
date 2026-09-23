@@ -32,7 +32,6 @@ th,td{padding:10px;border-bottom:1px solid #ddd;text-align:left}
 <table class="totals">
   <tr><td>Subtotal</td><td>{{ currency_symbol }} {{ order.subtotal|floatformat:2 }}</td></tr>
   <tr><td>Discount</td><td>-{{ currency_symbol }} {{ order.discount_amount|floatformat:2 }}</td></tr>
-  <tr><td>Shipping</td><td>{{ currency_symbol }} {{ order.shipping_cost|floatformat:2 }}</td></tr>
   <tr><td>Tax</td><td>{{ currency_symbol }} {{ order.tax_amount|floatformat:2 }}</td></tr>
   <tr class="big"><td>Total</td><td>{{ currency_symbol }} {{ order.total|floatformat:2 }}</td></tr>
 </table>

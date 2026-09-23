@@ -16,7 +16,7 @@ customized admin dashboard, and a test suite.
 
 - [Features](#features)
 - [Quick Start](#quick-start)
-- [Demo credentials](#demo-credentials)
+- [Accounts & first login](#accounts--first-login)
 - [Useful commands](#useful-commands)
 - [Project structure](#project-structure)
 - [Model overview](#model-overview)
@@ -48,7 +48,7 @@ not retried on every startup.
 - **Home page** — Steam/Epic-style hero carousel with real game art, genre browse chips, featured & recommended, special deals, new releases, best sellers
 - **Shop / catalog** — sidebar filters (genre, price, deals, search), sorting, pagination
 - **Category & tag/genre pages**
-- **Product detail** — 16:9 image gallery with HD screenshots, genre chips, Steam-style discount pricing, real release dates, tabs (description, specs, reviews, shipping), related games
+- **Product detail** — 16:9 image gallery with HD screenshots, genre chips, Steam-style discount pricing, real release dates, tabs (description, specs, reviews), related games
 - **Search** — live AJAX suggestions + zero-result live import (searches CheapShark and imports matches instantly)
 - **JSON API** — `/api/search/`, `/api/browse/`, `/api/games/<slug>/`, `/api/genres/`, `/api/contact/`, `/api/health/` (Django REST Framework)
 - **Recommendations** — explainable content-based recommendations using genre overlap, category, rating, and price similarity
@@ -56,23 +56,22 @@ not retried on every startup.
 - **Wishlist** — add/remove, move to cart
 - **Reviews & ratings** — star ratings, verified-purchase badges, helpful votes
 - **Responsive design** — dark/light theme toggle, mobile navigation
-- **Static pages** — About, Contact, FAQ, Privacy, Terms, Shipping & Returns
+- **Digital delivery** — games are delivered as license keys by email; there is no physical shipping
+- **Static pages** — About, Contact, FAQ, Privacy, Terms, Refund Policy
 
 ### Cart & Checkout
 - Persistent cart that works for **guests (session)** and **logged-in users**, merged on login
-- Quantity updates, cart drawer, free-shipping progress bar
-- **Coupons** — percentage, fixed, and free-shipping types with usage limits
+- Quantity updates, cart drawer
+- **Coupons** — percentage and fixed-amount types with usage limits
 - **Guest checkout** and account checkout
-- Billing / shipping addresses (save for later)
-- Configurable **shipping methods** with free-shipping thresholds
+- Billing details collected at checkout and stored on the order for invoices
 - Automatic **tax calculation**
-- Payment methods: **eSewa, Khalti, Stripe, PayPal, Cash on Delivery, Bank Transfer**
+- Payment methods: **eSewa, Khalti, Stripe, PayPal, Bank Transfer** (eSewa & Khalti are simulated in this demo)
 - Order confirmation + status emails
 
 ### Orders
 - Order history with status filter
 - Order detail with status timeline
-- Order tracking page
 - **PDF invoice** download (ReportLab with HTML fallback)
 - Cancel / reorder
 - Admin bulk status actions and status history audit trail
@@ -82,11 +81,10 @@ not retried on every startup.
 - Password reset flow
 - Dashboard with order/wishlist stats
 - Profile editing, password change
-- Address book (billing + shipping, default addresses)
 
 ### Admin (Jazzmin)
 - Rich, dark-themed dashboard
-- Full CRUD for products, categories, tags, orders, coupons, reviews, addresses, shipping, settings
+- Full CRUD for products, categories, tags, orders, coupons, reviews, settings
 - Inline product images & variants
 - Bulk order status actions, review moderation, subscriber management
 
@@ -164,14 +162,20 @@ DB_HOST=localhost
 DB_PORT=5433
 ```
 
-### Demo credentials
+### Accounts & first login
 
-| Role     | URL                    | Username | Password   |
-|----------|------------------------|----------|------------|
-| Admin    | `/admin/`              | `admin`  | `admin123` |
-| Customer | `/login/`              | `demo`   | `demo1234` |
+The dev server seeds two accounts on startup from your `.env` (see
+`.env.example`), and resets their passwords to match on every boot, so login
+always agrees with `.env`:
 
-> Change these before deploying to production.
+| Role     | URL         | Username source              | Password source                |
+|----------|-------------|------------------------------|--------------------------------|
+| Admin    | `/admin/`   | `DJANGO_SUPERUSER_USERNAME`  | `DJANGO_SUPERUSER_PASSWORD`    |
+| Customer | `/login/`   | `DEMO_USER_USERNAME`         | `DEMO_USER_PASSWORD`           |
+
+Set these in `.env` before first run (defaults are `admin` / `demo`). The demo
+customer is skipped if `DEMO_USER_PASSWORD` is left blank. Change every
+credential before deploying to production.
 
 ---
 
@@ -215,7 +219,7 @@ newastore/
 │   ├── settings.py           # env-var driven, Jazzmin, payments
 │   └── urls.py               # admin, sitemap, media, error handlers
 └── store/
-    ├── models.py             # 21 models (products, orders, cart, reviews, etc.)
+    ├── models.py             # core models (products, orders, cart, reviews, coupons, etc.)
     ├── recommendations.py    # explainable content-based product ranking
     ├── artwork.py            # artwork repair, fetching, and WebP materialization
     ├── views.py              # catalog, cart, checkout, orders, account, pages
@@ -251,9 +255,7 @@ newastore/
 | `Cart`, `CartItem` | Session/user cart |
 | `Wishlist`, `WishlistItem` | Saved products |
 | `Coupon`, `CouponUsage` | Discounts with limits & conditions |
-| `Address` | Billing / shipping address book |
 | `Order`, `OrderItem`, `OrderStatusHistory` | Orders with immutable line items & audit trail |
-| `ShippingMethod` | Configurable shipping rates |
 | `NewsletterSubscriber`, `ContactMessage` | Marketing & support |
 | `SiteSettings` | Global store configuration (singleton) |
 

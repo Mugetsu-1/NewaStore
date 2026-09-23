@@ -57,20 +57,16 @@ if product:
     # Check for payment methods in form
     payment_methods = re.findall(r'name="payment_method"[^>]*value="([^"]+)"', body)
     print(f"Payment methods in form: {payment_methods}")
-    
-    # Check for shipping methods
-    shipping = re.findall(r'name="shipping_method"[^>]*value="([^"]+)"', body)
-    print(f"Shipping methods in form: {shipping}")
-    
+
     # Check for errors
     if 'errorlist' in body:
         errors = re.findall(r'<ul class="errorlist">(.*?)</ul>', body, re.DOTALL)
         print(f"Form errors found: {errors}")
-    
-    # Test completing checkout with COD
+
+    # Test completing checkout with Nay Bank transfer (digital, no shipping)
     csrf_match = re.search(r'name="csrfmiddlewaretoken"[^>]*value="([^"]+)"', body)
     csrf_token = csrf_match.group(1) if csrf_match else ''
-    
+
     form_data = {
         'csrfmiddlewaretoken': csrf_token,
         'billing_full_name': 'Test User',
@@ -81,25 +77,22 @@ if product:
         'billing_state': 'Bagmati',
         'billing_postal_code': '44600',
         'billing_country': 'Nepal',
-        'shipping_option': 'same',
-        'shipping_method': shipping[0] if shipping else '',
-        'payment_method': 'cod',
+        'payment_method': 'nay_bank',
         'terms_accepted': 'on',
     }
-    
-    if shipping:
-        submit_resp = client.post('/checkout/', form_data)
-        print(f"Submit checkout: {submit_resp.status_code}")
-        if hasattr(submit_resp, 'url'):
-            print(f"Redirect to: {submit_resp.url}")
-        else:
-            body2 = submit_resp.content.decode()
-            if 'errorlist' in body2:
-                errs = re.findall(r'<ul class="errorlist">(.*?)</ul>', body2, re.DOTALL)
-                print(f"Submit errors: {errs}")
-            order_found = re.search(r'Order Number:\s*([A-Z0-9-]+)', body2)
-            if order_found:
-                print(f"Order number: {order_found.group(1)}")
+
+    submit_resp = client.post('/checkout/', form_data)
+    print(f"Submit checkout: {submit_resp.status_code}")
+    if hasattr(submit_resp, 'url'):
+        print(f"Redirect to: {submit_resp.url}")
+    else:
+        body2 = submit_resp.content.decode()
+        if 'errorlist' in body2:
+            errs = re.findall(r'<ul class="errorlist">(.*?)</ul>', body2, re.DOTALL)
+            print(f"Submit errors: {errs}")
+        order_found = re.search(r'Order Number:\s*([A-Z0-9-]+)', body2)
+        if order_found:
+            print(f"Order number: {order_found.group(1)}")
     
     # Check orders
     orders = Order.objects.filter(user=user)
@@ -233,19 +226,11 @@ test_data = {
     'billing_state': 'Bagmati',
     'billing_postal_code': '44600',
     'billing_country': 'Nepal',
-    'shipping_option': 'same',
-    'shipping_full_name': 'Test User',
-    'shipping_phone': '9800000000',
-    'shipping_address_line_1': '123 Test St',
-    'shipping_city': 'Kathmandu',
-    'shipping_state': 'Bagmati',
-    'shipping_postal_code': '44600',
-    'shipping_country': 'Nepal',
-    'payment_method': 'cod',
+    'payment_method': 'nay_bank',
     'terms_accepted': 'on',
 }
 
-payment_methods = ['cod', 'bank_transfer', 'esewa', 'khalti', 'stripe', 'paypal']
+payment_methods = ['esewa', 'khalti', 'nay_bank', 'stripe', 'paypal']
 for pm in payment_methods:
     test_data['payment_method'] = pm
     # Get fresh CSRF token
@@ -254,14 +239,7 @@ for pm in payment_methods:
     csrf_match = re.search(r'name="csrfmiddlewaretoken"\s+value="([^"]+)"', body)
     if csrf_match:
         test_data['csrfmiddlewaretoken'] = csrf_match.group(1)
-    
-    # Get shipping method if present
-    sm_match = re.search(r'name="shipping_method"\s+value="([^"]+)"', body)
-    if sm_match:
-        test_data['shipping_method'] = sm_match.group(1)
-    else:
-        test_data.pop('shipping_method', None)
-    
+
     resp = client.post('/checkout/', test_data)
     print(f"POST {pm.upper():15s}: status={resp.status_code}", end="")
     if hasattr(resp, 'url'):
