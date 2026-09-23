@@ -3,7 +3,6 @@ from django.contrib.auth import views as auth_views
 from . import views
 
 urlpatterns = [
-    # Catalog
     path('', views.home, name='home'),
     path('shop/', views.product_list, name='product_list'),
     path('search/', views.search, name='search'),
@@ -13,7 +12,6 @@ urlpatterns = [
     path('category/<slug:slug>/', views.category_detail, name='category_detail'),
     path('tag/<slug:slug>/', views.tag_detail, name='tag_detail'),
 
-    # Cart
     path('cart/', views.cart_view, name='cart'),
     path('cart/mini/', views.cart_mini, name='cart_mini'),
     path('cart/add/<int:product_id>/', views.add_to_cart, name='add_to_cart'),
@@ -23,7 +21,6 @@ urlpatterns = [
     path('cart/coupon/apply/', views.apply_coupon, name='apply_coupon'),
     path('cart/coupon/remove/', views.remove_coupon, name='remove_coupon'),
 
-    # Checkout & payments
     path('checkout/', views.checkout, name='checkout'),
     path('payment/simulate/<str:order_number>/<str:gateway>/', views.simulate_payment, name='simulate_payment'),
     path('esewa-verify/', views.esewa_verify, name='esewa_verify'),
@@ -39,30 +36,25 @@ urlpatterns = [
     path('payment/failed/<str:order_number>/', views.payment_failed, name='payment_failed'),
     path('order/success/<str:order_number>/', views.order_success, name='order_success'),
 
-    # Orders
     path('orders/', views.order_history, name='order_history'),
     path('orders/<str:order_number>/', views.order_detail, name='order_detail'),
     path('orders/<str:order_number>/invoice/', views.download_invoice, name='download_invoice'),
     path('orders/<str:order_number>/cancel/', views.cancel_order, name='cancel_order'),
     path('orders/<str:order_number>/reorder/', views.reorder, name='reorder'),
 
-    # Account
     path('profile/', views.profile, name='profile'),
     path('profile/edit/', views.profile_edit, name='profile_edit'),
     path('profile/password/', views.change_password, name='change_password'),
     path('reviews/', views.my_reviews, name='my_reviews'),
 
-    # Wishlist
     path('wishlist/', views.wishlist_view, name='wishlist'),
     path('wishlist/toggle/<int:product_id>/', views.wishlist_toggle, name='wishlist_toggle'),
     path('wishlist/remove/<int:item_id>/', views.wishlist_remove, name='wishlist_remove'),
     path('wishlist/move-to-cart/<int:item_id>/', views.wishlist_move_to_cart, name='wishlist_move_to_cart'),
 
-    # Reviews
     path('product/<slug:slug>/review/', views.add_review, name='add_review'),
     path('review/<int:review_id>/helpful/', views.mark_review_helpful, name='mark_review_helpful'),
 
-    # Auth
     path('register/', views.register, name='register'),
     path('login/', auth_views.LoginView.as_view(template_name='registration/login.html'), name='login'),
     path('logout/', auth_views.LogoutView.as_view(), name='logout'),
@@ -71,7 +63,6 @@ urlpatterns = [
     path('password-reset/confirm/<uidb64>/<token>/', views.CustomPasswordResetConfirmView.as_view(), name='password_reset_confirm'),
     path('password-reset/complete/', views.CustomPasswordResetCompleteView.as_view(), name='password_reset_complete'),
 
-    # Static pages
     path('about/', views.about, name='about'),
     path('contact/', views.contact, name='contact'),
     path('faq/', views.faq, name='faq'),

@@ -48,8 +48,6 @@ def send_templated_email(subject, template_name, context, to_emails, from_email=
     try:
         msg.send(fail_silently=False)
     except Exception:
-        # Never break the storefront on SMTP hiccups, but DO make failures
-        # visible (bad app password, rate limit, ...) in logs/terminal.
         logger.exception('Email send failed (subject=%r, to=%s)', subject, to_emails)
 
 
@@ -122,7 +120,7 @@ def mark_order_paid(order, gateway='', txn_id=''):
         if order.status != 'confirmed':
             order.status = 'confirmed'
             order.confirmed_at = timezone.now()
-        order.save()  # fires the OrderStatusHistory pre_save signal
+        order.save()
         send_order_status_update(order)
         send_payment_receipt(order)
     order.refresh_from_db()

@@ -1,6 +1,3 @@
-/* ============================================================
-   Newa Store — Main JS
-   ============================================================ */
 (function () {
   'use strict';
 
@@ -13,7 +10,6 @@
   }
   const csrftoken = getCookie('csrftoken') || ($('[name=csrfmiddlewaretoken]') || {}).value || '';
 
-  // ---------- Broken-image fallback (hotlinked Steam art can 404) ----------
   const IMG_PLACEHOLDER = document.body && document.body.dataset.placeholderUrl;
   if (IMG_PLACEHOLDER) {
     document.addEventListener('error', (e) => {
@@ -25,7 +21,6 @@
     }, true);
   }
 
-  // ---------- Theme toggle ----------
   const themeKey = 'newa-theme';
   const savedTheme = localStorage.getItem(themeKey);
   if (savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
@@ -39,13 +34,11 @@
     if (icon) icon.className = cur === 'light' ? 'fas fa-moon' : 'fas fa-sun';
   });
 
-  // ---------- Mobile nav ----------
   window.toggleNav = function () {
     const nav = $('.nav');
     if (nav) nav.classList.toggle('mobile-open');
   };
 
-  // ---------- Auto-style Django form widgets ----------
   document.addEventListener('DOMContentLoaded', () => {
     $$('.form-group input, .form-group select, .form-group textarea, form.auth-form input, form.auth-form select').forEach((el) => {
       const t = (el.type || '').toLowerCase();
@@ -54,7 +47,6 @@
     });
   });
 
-  // ---------- Hero carousel ----------
   const slides = $$('.hero-slide');
   const dots = $$('.hero-dot');
   let heroIndex = 0;
@@ -69,14 +61,12 @@
     dots.forEach((d, i) => d.addEventListener('click', () => showSlide(i)));
   }
 
-  // ---------- Alerts auto dismiss ----------
   $$('.alert').forEach((a) => {
     const close = $('.alert-close', a);
     if (close) close.addEventListener('click', () => a.remove());
     setTimeout(() => { a.style.opacity = '0'; setTimeout(() => a.remove(), 300); }, 5000);
   });
 
-  // ---------- AJAX helper ----------
   async function post(url, data) {
     const body = data instanceof FormData ? data : new URLSearchParams(data);
     const res = await fetch(url, {
@@ -87,7 +77,6 @@
     return res.json();
   }
 
-  // ---------- Add to cart ----------
   document.addEventListener('submit', async (e) => {
     const form = e.target.closest('form[data-ajax-cart]');
     if (!form) return;
@@ -107,7 +96,6 @@
     }
   });
 
-  // ---------- Wishlist toggle ----------
   document.addEventListener('click', async (e) => {
     const btn = e.target.closest('[data-wishlist-toggle]');
     if (!btn) return;
@@ -124,7 +112,6 @@
     }
   });
 
-  // ---------- Quantity steppers ----------
   document.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-qty]');
     if (!btn) return;
@@ -139,7 +126,6 @@
     input.dispatchEvent(new Event('change', { bubbles: true }));
   });
 
-  // ---------- Cart qty update ----------
   document.addEventListener('change', async (e) => {
     const input = e.target.closest('[data-cart-qty]');
     if (!input) return;
@@ -158,10 +144,9 @@
       const dis = $('#cart-discount'); if (dis) dis.textContent = '-' + currency(json.discount);
       const tot = $('#cart-total'); if (tot) tot.textContent = currency(json.total);
       loadCartMini();
-    } catch (err) { /* noop */ }
+    } catch (err) {  }
   });
 
-  // ---------- Cart drawer ----------
   window.openCart = function () {
     $('.drawer') && $('.drawer').classList.add('show');
     $('.drawer-overlay') && $('.drawer-overlay').classList.add('show');
@@ -183,10 +168,9 @@
       const previous = parseInt(el.textContent, 10);
       el.textContent = count;
       el.style.display = count > 0 ? 'flex' : 'none';
-      // Pop the badge only when the number actually moves.
       if (!isNaN(previous) && previous !== count) {
         el.classList.remove('pop');
-        void el.offsetWidth; // restart the animation
+        void el.offsetWidth;
         el.classList.add('pop');
       }
     });
@@ -200,10 +184,9 @@
       box.innerHTML = await res.text();
       const totals = box.querySelector('[data-mini-total]');
       if (totals) $('#drawer-foot-total') && ($('#drawer-foot-total').textContent = totals.dataset.miniTotal);
-    } catch (err) { /* noop */ }
+    } catch (err) {  }
   }
 
-  // ---------- Toasts ----------
   function showToast(message, type) {
     let wrap = $('#toast-wrap');
     if (!wrap) {
@@ -229,7 +212,6 @@
     return 'Rs. ' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
-  // ---------- Tabs ----------
   document.addEventListener('click', (e) => {
     const btn = e.target.closest('.tab-btn');
     if (!btn) return;
@@ -242,7 +224,6 @@
     if (panel) panel.classList.add('active');
   });
 
-  // ---------- Product gallery ----------
   document.addEventListener('click', (e) => {
     const thumb = e.target.closest('.pd-thumb');
     if (!thumb) return;
@@ -252,7 +233,6 @@
     if (main) main.src = thumb.dataset.src;
   });
 
-  // ---------- Variant selection ----------
   document.addEventListener('click', (e) => {
     const opt = e.target.closest('[data-variant]');
     if (!opt) return;
@@ -265,7 +245,6 @@
     if (price && opt.dataset.price) price.textContent = currency(opt.dataset.price);
   });
 
-  // ---------- Search suggestions ----------
   const searchInput = $('#search-input');
   const suggestions = $('#search-suggestions');
   let searchTimer;
@@ -289,7 +268,7 @@
               <div style="color:var(--primary);font-weight:700;font-size:.85rem">${r.price}</div></div></a>`;
           }).join('');
           suggestions.classList.add('show');
-        } catch (err) { /* noop */ }
+        } catch (err) {  }
       }, 250);
     });
     document.addEventListener('click', (e) => {
@@ -297,7 +276,6 @@
     });
   }
 
-  // ---------- Newsletter ----------
   document.addEventListener('submit', async (e) => {
     const form = e.target.closest('form[data-newsletter]');
     if (!form) return;
@@ -309,7 +287,6 @@
     } catch (err) { showToast('Subscription failed.', 'error'); }
   });
 
-  // ---------- Payment radio cards ----------
   document.addEventListener('change', (e) => {
     const radio = e.target.closest('.radio-card input[type=radio]');
     if (!radio) return;
@@ -318,7 +295,6 @@
     radio.closest('.radio-card').classList.add('selected');
   });
 
-  // ---------- Countdown timers ----------
   $$('[data-countdown]').forEach((el) => {
     const end = new Date(el.dataset.countdown).getTime();
     const tick = () => {
@@ -334,14 +310,12 @@
     setInterval(tick, 1000);
   });
 
-  // ---------- Server messages -> toast stack ----------
   const msgWrap = $('.messages-wrap');
   if (msgWrap && msgWrap.children.length) {
     const tw = $('#toast-wrap');
     if (tw) Array.from(msgWrap.children).forEach((a) => tw.appendChild(a));
   }
 
-  // ---------- Shop: AJAX filters, sorting & infinite scroll ----------
   const shopResults = $('#shop-results');
   const filterForm = $('#filter-form');
   const sortForm = $('#sort-form');
@@ -375,12 +349,11 @@
   async function loadShop(url) {
     if (!shopResults) return;
     const token = ++shopLoadToken;
-    // Shimmer placeholders make the swap feel instant instead of frozen.
     showShopSkeleton();
     try {
       const res = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
       const html = await res.text();
-      if (token !== shopLoadToken) return; // a newer request superseded this one
+      if (token !== shopLoadToken) return;
       shopResults.innerHTML = html;
       syncShopMeta();
       history.pushState({ shop: true }, '', url);
@@ -415,7 +388,6 @@
     });
   }
 
-  // Back/forward buttons re-fetch the right result set.
   window.addEventListener('popstate', () => {
     if (!shopResults) return;
     const params = new URLSearchParams(location.search);
@@ -462,7 +434,6 @@
     infiniteObserver.observe(sentinel);
   }
   startInfiniteScroll();
-// ---------- Header shrink on scroll ----------
   const headerEl = $('.header');
   if (headerEl) {
     let ticking = false;
@@ -478,8 +449,6 @@
     onScroll();
   }
 
-  // ---------- Submit buttons get a spinner so clicks always feel handled ----
-  // AJAX forms are skipped: their buttons must stay usable after the swap.
   const AJAX_FORMS = ['#filter-form', '#sort-form', 'form[data-newsletter]', '#coupon-form'];
   document.addEventListener('submit', (e) => {
     const form = e.target;
@@ -490,7 +459,6 @@
     if (btn) btn.classList.add('is-busy');
   });
 
-  // Checkout: narrate the redirect so the page never appears frozen.
   const checkoutForm = $('#checkout-form');
   if (checkoutForm) {
     checkoutForm.addEventListener('submit', () => {
@@ -507,7 +475,6 @@
     });
   }
 
-  // ---------- Wishlist / cart buttons: brief press feedback ----------
   document.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-wishlist-toggle], .btn-add-cart, [data-add-to-cart]');
     if (!btn) return;

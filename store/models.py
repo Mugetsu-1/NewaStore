@@ -62,7 +62,6 @@ class Product(models.Model):
     sku = models.CharField(max_length=50, unique=True, blank=True)
     barcode = models.CharField(max_length=50, blank=True)
 
-    # External data linkage (live imports via CheapShark / SteamSpy / Steam)
     steam_app_id = models.PositiveBigIntegerField(null=True, blank=True, unique=True,
                                                   help_text="Steam appid — used as import/upsert key")
     external_url = models.URLField(blank=True, help_text="Store page for this deal")
@@ -159,8 +158,6 @@ class ProductImage(models.Model):
                               help_text="Local file (downloaded). Optional when external_url is set.")
     external_url = models.URLField(max_length=500, blank=True,
                                    help_text="Hotlinked image (e.g. Steam CDN capsule art)")
-    # Fetch-once derivative: a locally stored WebP card thumbnail. When set,
-    # listing pages are served from our own media (no Steam CDN dependency).
     thumbnail = models.ImageField(upload_to='artwork/thumbs/', blank=True,
                                   help_text="Generated card thumbnail (WebP). "
                                             "Materialized from external_url by "

@@ -6,10 +6,9 @@ from .models import Product, Category
 class ProductSitemap(Sitemap):
     changefreq = 'weekly'
     priority = 0.8
-    limit = 5000  # urls per sitemap page
+    limit = 5000
 
     def items(self):
-        # newest first; capped so a 60k+ catalog doesn't build giant sitemaps
         return (Product.objects.filter(is_active=True)
                 .order_by('-published_at')[:10000])
 

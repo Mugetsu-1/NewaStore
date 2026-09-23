@@ -36,17 +36,16 @@ from django.db.models import Count, Q
 
 from .models import Product
 
-# --- Tunables (kept as module constants so they are easy to cite / defend) ---
-W_GENRE = 0.45      # tag/genre Jaccard overlap — strongest signal for games
-W_CATEGORY = 0.25   # same category / sibling category
-W_RATING = 0.15     # metacritic proximity
-W_PRICE = 0.15      # price-band proximity
+W_GENRE = 0.45
+W_CATEGORY = 0.25
+W_RATING = 0.15
+W_PRICE = 0.15
 
-MIN_SCORE = 0.35    # similarity floor: below this we do not recommend
-DEFAULT_LIMIT = 4   # size of the "You may also like" strip
-CANDIDATE_POOL = 80 # cap on rows scored in Python, pre-ranked in the DB
-PRICE_CAP = 30000   # NPR reference span for the log price-distance scale
-CACHE_TTL = 60 * 60 # recommendations are stable; cache the ranking for 1h
+MIN_SCORE = 0.35
+DEFAULT_LIMIT = 4
+CANDIDATE_POOL = 80
+PRICE_CAP = 30000
+CACHE_TTL = 60 * 60
 CACHE_VERSION = "v1"
 
 
@@ -111,10 +110,6 @@ def recommend_for_product(product, limit=DEFAULT_LIMIT):
     base_tag_ids = set(product.tags.values_list("id", flat=True))
     base_tag_names = set(product.tags.values_list("name", flat=True))
 
-    # Narrow the pool in the DB first: only items that share the category or at
-    # least one genre are plausible matches. Pre-rank by shared-tag count so the
-    # Python scoring never sees more than CANDIDATE_POOL rows even on a huge
-    # catalogue — this keeps the product page fast with thousands of games.
     pool = (
         Product.objects.filter(is_active=True)
         .exclude(pk=product.pk)
@@ -145,7 +140,6 @@ def recommend_for_product(product, limit=DEFAULT_LIMIT):
     ranking = [(pk, reason, s) for s, pk, reason in scored[:limit]]
 
     if not ranking:
-        # Cold start / thinly-tagged item: fall back to popular active products.
         fb = (Product.objects.filter(is_active=True)
               .exclude(pk=product.pk)
               .order_by("-is_featured", "-metacritic_score", "-created_at")

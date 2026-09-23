@@ -257,7 +257,6 @@ class CheckoutTests(TestCase):
         self.client.post(reverse('add_to_cart', args=[self.product.id]), {'quantity': 1})
         self.client.post(reverse('checkout'), self._checkout_payload())
         order = Order.objects.first()
-        # product price 800 (discounted), tax 13% on 800, no shipping
         self.assertEqual(order.subtotal, Decimal('800'))
         self.assertEqual(order.tax_amount, Decimal('104.00'))
         self.assertEqual(order.total, Decimal('904.00'))
@@ -376,7 +375,6 @@ class PaymentFulfillmentTests(TestCase):
         self.assertEqual(order.status, 'confirmed')
         self.assertIsNotNone(order.confirmed_at)
         self.assertEqual(order.payment_transaction_id, 'pi_test_1')
-        # single status-history record; status + receipt emails sent once
         self.assertEqual(OrderStatusHistory.objects.filter(order=order).count(), 1)
         self.assertEqual(len(mail.outbox), 2)
 
@@ -483,7 +481,6 @@ class BootstrapTests(TestCase):
             state_file.unlink()
 
         out = StringIO()
-        # Everything skipped: no migrations, no import, no repair, no audit.
         call_command("ensure_ready", skip_migrate=True, skip_import=True,
                      skip_repair=True, skip_audit=True, stdout=out)
         text = out.getvalue()
@@ -536,7 +533,7 @@ class BootstrapTests(TestCase):
     def test_runserver_command_exposes_bootstrap_flags(self):
         from django.core.management import get_commands, load_command_class
         app = get_commands()["runserver"]
-        self.assertEqual(app, "store")  # our override wins over staticfiles
+        self.assertEqual(app, "store")
         cmd = load_command_class(app, "runserver")
         from store.management.commands.runserver import Command as RSCommand
         self.assertIsInstance(cmd, RSCommand)
@@ -547,7 +544,6 @@ class BootstrapTests(TestCase):
         self.assertIn("--skip-bootstrap", flags)
         self.assertIn("--force-bootstrap", flags)
         self.assertIn("--bootstrap-workers", flags)
-        # and it still supports the vanilla flags
         self.assertIn("--noreload", flags)
         self.assertIn("--nostatic", flags)
 
@@ -641,7 +637,6 @@ class SimulatedGatewayTests(TestCase):
         }
         return self.client.post(reverse('checkout'), payload)
 
-    # ---------------------------------------------------------- checkout UI
 
     def test_checkout_offers_simulated_wallets_and_nay_bank(self):
         self.client.login(username='sim_buyer', password='pass12345')
@@ -654,7 +649,6 @@ class SimulatedGatewayTests(TestCase):
         self.assertIn('Khalti (Simulated)', html)
         self.assertIn('Nay Bank Transfer', html)
 
-# ------------------------------------------------- eSewa / Khalti (demo)
 
     def test_esewa_checkout_renders_local_page_instead_of_redirect(self):
         response = self._start_checkout('esewa')
@@ -662,7 +656,6 @@ class SimulatedGatewayTests(TestCase):
         html = response.content.decode()
         self.assertIn('Simulated payment', html)
         self.assertIn('eSewa', html)
-        # no external gateway may be contacted
         self.assertNotIn('esewa.com.np', html)
         order = Order.objects.get()
         self.assertEqual(order.payment_method, 'esewa')
@@ -734,7 +727,6 @@ class SimulatedGatewayTests(TestCase):
         for host in ('esewa.com.np', 'khalti.com', 'js.stripe.com', 'paypal.com'):
             self.assertNotIn(host, html)
 
-    # ------------------------------------------------------ Nay Bank transfer
 
     def test_nay_bank_order_stays_pending_and_shows_account_details(self):
         response = self._start_checkout('nay_bank')
@@ -750,7 +742,7 @@ class SimulatedGatewayTests(TestCase):
         html = page.content.decode()
         self.assertIn('Nay Bank', html)
         self.assertIn('Complete your bank transfer', html)
-        self.assertIn('0123456789012', html)  # demo account number
+        self.assertIn('0123456789012', html)
         self.assertIn(order.order_number, html)
 
     def test_nay_bank_details_only_render_for_bank_orders(self):

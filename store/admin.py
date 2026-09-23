@@ -209,8 +209,6 @@ class CouponAdmin(admin.ModelAdmin):
     list_filter = ['discount_type', 'is_active', 'valid_from', 'valid_until']
     search_fields = ['code', 'name', 'description']
     list_editable = ['is_active']
-    # Product M2Ms use autocomplete lookups — a filter_horizontal select would
-    # render one option per product (tens of thousands) and hang the page.
     filter_horizontal = ['applicable_categories']
     autocomplete_fields = ['applicable_products', 'excluded_products']
     readonly_fields = ['used_count', 'created_at', 'updated_at']

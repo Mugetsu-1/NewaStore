@@ -67,7 +67,6 @@ document.addEventListener('DOMContentLoaded', function () {
       const data = await createIntent();
       if (!data.success) { showError(data.error || 'Could not start payment.'); return; }
       if (data.already_paid) { window.location.href = '/order/success/' + ORDER + '/'; return; }
-      // On success Stripe redirects to stripe_success with ?payment_intent=…
       const { error } = await stripe.confirmPayment({
         elements,
         clientSecret: data.client_secret,

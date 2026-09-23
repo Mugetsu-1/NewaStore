@@ -16,7 +16,6 @@
         {% csrf_token %}
         <div class="checkout-layout">
             <div>
-                <!-- Billing -->
                 <div class="checkout-section">
                     <h3><span class="step-num">1</span> Billing Information</h3>
                     <div class="form-row">
@@ -68,7 +67,6 @@
                     </div>
                 </div>
 
-                <!-- Digital delivery -->
                 <div class="checkout-section">
                     <h3><span class="step-num">2</span> Delivery</h3>
                     <div class="payment-methods">
@@ -83,7 +81,6 @@
                     </div>
                 </div>
 
-                <!-- Payment -->
                 <div class="checkout-section">
                     <h3><span class="step-num">3</span> Payment Method</h3>
                     <div class="payment-methods">
@@ -103,7 +100,6 @@
                     </div>
                 </div>
 
-                <!-- Notes -->
                 <div class="checkout-section">
                     <h3><span class="step-num">4</span> Order Notes</h3>
                     <div class="form-group">
@@ -119,7 +115,6 @@
                 </div>
             </div>
 
-            <!-- Order Summary -->
             <aside class="summary">
                 <h3 style="margin-bottom:18px">Your Order</h3>
                 <div style="max-height:280px;overflow-y:auto;margin-bottom:16px">
@@ -162,7 +157,6 @@
 <script>
 document.addEventListener('DOMContentLoaded', function(){
   var form = document.getElementById('checkout-form');
-  // Add form-control class to all widgets
   form.querySelectorAll('input:not([type=radio]):not([type=checkbox]), select, textarea').forEach(function(el){
     if(!el.classList.contains('form-control') && el.type !== 'hidden') el.classList.add('form-control');
   });

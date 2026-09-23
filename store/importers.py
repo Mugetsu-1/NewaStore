@@ -42,11 +42,8 @@ SKIP_TITLE_PATTERNS = [
     re.compile(r'\bDemo\b(?!n)', re.I),
 ]
 
-# CheapShark active store ids (fetched from /stores)
 CS_STORES = ['1', '2', '3', '7', '11', '13', '15', '21', '23', '25', '27', '28', '30', '35']
 
-# Price bands (USD) that partition the catalog; `page` is broken on
-# CheapShark so band x store x sort combos are how we enumerate everything.
 PRICE_BANDS = [
     (0, 1), (1, 2), (2, 3), (3, 5), (5, 7), (7, 10),
     (10, 15), (15, 20), (20, 30), (30, 50), (50, 60), (60, 100000),
@@ -98,9 +95,6 @@ def get_or_create_tag(name):
     return tag
 
 
-# ---------------------------------------------------------------------------
-# HTTP with per-host politeness + 429 backoff
-# ---------------------------------------------------------------------------
 
 class Api:
     def __init__(self):
@@ -127,7 +121,7 @@ class Api:
                 if r.status_code == 429:
                     if not ok_429:
                         return 'RATE_LIMITED'
-                    time.sleep(15 * attempt)  # brief backoff; callers handle bans
+                    time.sleep(15 * attempt)
                     continue
                 r.raise_for_status()
                 return r.json()
@@ -172,9 +166,6 @@ def wait_for_cheapshark(max_minutes=45):
     return False
 
 
-# ---------------------------------------------------------------------------
-# URL builders
-# ---------------------------------------------------------------------------
 
 def steam_capsule_url(appid):
     return (f'https://shared.fastly.steamstatic.com/store_item_assets/steam/'
@@ -189,9 +180,6 @@ def product_external_url(appid, game_id=None):
     return ''
 
 
-# ---------------------------------------------------------------------------
-# Upsert engine (bulk, Postgres-friendly)
-# ---------------------------------------------------------------------------
 
 def _games_category():
     category, _ = Category.objects.get_or_create(
@@ -218,7 +206,6 @@ def upsert_games(games, data_source, update_existing=True, on_progress=None):
 
     category = _games_category()
 
-    # ---- existing lookup maps ----
     appids = [g['appid'] for g in games if g.get('appid')]
     existing_by_appid = {}
     if appids:
@@ -236,7 +223,7 @@ def upsert_games(games, data_source, update_existing=True, on_progress=None):
     existing_skus = set(Product.objects.values_list('sku', flat=True))
 
     to_create = []
-    updates = {}          # product_id -> Product (staged for bulk_update)
+    updates = {}
     update_fields = set()
 
     for g in games:
@@ -274,7 +261,6 @@ def upsert_games(games, data_source, update_existing=True, on_progress=None):
                 updates[pid] = p
             continue
 
-        # ---- new product ----
         base_slug = slugify(name)[:180] or f'game-{appid or game_id or uuid.uuid4().hex[:8]}'
         slug = base_slug
         if slug in existing_slugs:
@@ -332,12 +318,10 @@ def upsert_games(games, data_source, update_existing=True, on_progress=None):
                                         fields=list(update_fields), batch_size=BULK_BATCH)
     updated = len(updates)
 
-    # ---- images (hotlinked capsules for new products) ----
     if to_create:
         thumb_by_name = {g['name'][:200]: g.get('thumb') for g in games if g.get('thumb')}
         images = []
         for p in to_create:
-            # prefer deterministic Steam capsule; fall back to provided thumb
             url = steam_capsule_url(p.steam_app_id) if p.steam_app_id else None
             if not url:
                 url = thumb_by_name.get(p.name)
@@ -347,7 +331,6 @@ def upsert_games(games, data_source, update_existing=True, on_progress=None):
         for i in range(0, len(images), BULK_BATCH):
             ProductImage.objects.bulk_create(images[i:i + BULK_BATCH], batch_size=BULK_BATCH)
 
-    # ---- genre tags ----
     tag_pairs = []
     games_with_genres = [g for g in games if g.get('genres')]
     if games_with_genres:
@@ -361,7 +344,6 @@ def upsert_games(games, data_source, update_existing=True, on_progress=None):
                     tag = get_or_create_tag(genre)
                     if tag:
                         tag_ids[genre] = tag.id
-        # map products by appid/title to freshly created/known ids
         all_by_appid = dict(Product.objects.filter(
             steam_app_id__in=[g['appid'] for g in games_with_genres if g.get('appid')]
         ).values_list('steam_app_id', 'id')) if any(g.get('appid') for g in games_with_genres) else {}
@@ -385,9 +367,6 @@ def upsert_games(games, data_source, update_existing=True, on_progress=None):
     return created, updated
 
 
-# ---------------------------------------------------------------------------
-# CheapShark: enumeration sweep + per-game deal lookup
-# ---------------------------------------------------------------------------
 
 def _deal_to_game(deal):
     normal = Decimal(str(deal.get('normalPrice') or '0'))
@@ -430,7 +409,6 @@ def sweep_deals(max_requests=400, on_progress=None):
     for band in PRICE_BANDS:
         for sort in ('Title', 'Metacritic', 'Deal Rating', 'Savings', 'Release'):
             combos.append({'lowerPrice': band[0], 'upperPrice': band[1], 'sortBy': sort})
-    # store-partitioned passes over the crowded cheap bands
     for band in PRICE_BANDS[:6]:
         for store in CS_STORES:
             combos.append({'lowerPrice': band[0], 'upperPrice': band[1],
@@ -450,8 +428,6 @@ def sweep_deals(max_requests=400, on_progress=None):
         if not isinstance(data, list):
             consecutive_failures += 1
             if consecutive_failures >= 3:
-                # We're probably banned again — wait it out patiently
-                # instead of burning through the request budget.
                 print('  sweep: API unavailable — waiting for CheapShark to recover...')
                 wait_for_cheapshark()
                 consecutive_failures = 0
@@ -493,25 +469,21 @@ def import_search_query(query):
     if len(norm) < 3:
         return 0
 
-    # negative cache: don't re-query the API for the same miss
     miss_key = f'cs_search_miss:{norm}'
     if cache.get(miss_key):
         return 0
-    # global throttle so bots can't hammer the API through our search box
-    if not cache.add('cs_search_lock', 1, 10):  # at most one import per 10s
+    if not cache.add('cs_search_lock', 1, 10):
         return 0
 
-    # fail fast: a single attempt, no 429 retries (users shouldn't wait on bans)
     matches = api.get_json(f'{CS_API}/games', {'title': query},
                            min_interval=0.75, retries=1, ok_429=False)
     if matches == 'RATE_LIMITED':
-        cache.set(miss_key, 1, 60)  # don't retry for a minute during bans
+        cache.set(miss_key, 1, 60)
         return 0
     if not matches:
         cache.set(miss_key, 1, 300)
         return 0
 
-    # skip titles already in the store
     candidates = []
     for m in matches[:8]:
         appid = m.get('steamAppID')
@@ -532,7 +504,6 @@ def import_search_query(query):
         deals = cheapshark_game_deals(m['gameID'])
         if not deals or not isinstance(deals, list):
             continue
-        # best deal = highest savings with a real price
         best = None
         for d in deals:
             try:
@@ -547,7 +518,6 @@ def import_search_query(query):
 
     created, _ = upsert_games(games, data_source='search_import')
 
-    # enrich imported games with Steam genres/descriptions (few, so it's cheap)
     if created:
         enrich_with_steam(Product.objects.filter(
             data_source='search_import', steam_enriched=False,
@@ -555,9 +525,6 @@ def import_search_query(query):
     return created
 
 
-# ---------------------------------------------------------------------------
-# Steam enrichment (genres, real descriptions, release dates)
-# ---------------------------------------------------------------------------
 
 def strip_html(html):
     text = re.sub(r'<br\s*/?>', '\n', html or '')
@@ -596,7 +563,7 @@ def enrich_with_steam(products, limit=200, delay=0.65):
             continue
         payload = data.get(str(p.steam_app_id), {})
         if not (payload.get('success') and payload.get('data')):
-            p.steam_enriched = True  # not on Steam store; don't retry forever
+            p.steam_enriched = True
             p.save(update_fields=['steam_enriched'])
             continue
         d = payload['data']
@@ -629,7 +596,6 @@ def enrich_with_steam(products, limit=200, delay=0.65):
         p.save(update_fields=['description', 'short_description', 'published_at',
                               'steam_enriched'])
 
-        # genre tags
         through = Product.tags.through
         pairs = []
         for genre in genres[:4]:
@@ -639,7 +605,6 @@ def enrich_with_steam(products, limit=200, delay=0.65):
         if pairs:
             through.objects.bulk_create(pairs, ignore_conflicts=True)
 
-        # extra gallery screenshots (hotlinked) for featured games
         if p.is_featured:
             existing = p.images.count()
             shots = (d.get('screenshots') or [])[:2]
@@ -654,9 +619,6 @@ def enrich_with_steam(products, limit=200, delay=0.65):
     return enriched
 
 
-# ---------------------------------------------------------------------------
-# SteamSpy (full catalog + genre tagging)
-# ---------------------------------------------------------------------------
 
 def steamspy_page(page):
     """One page of SteamSpy's full catalog (~1000 apps)."""

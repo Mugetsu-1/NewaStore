@@ -26,7 +26,6 @@ except Exception as e:
 print()
 print("=== 2. CHECKOUT FLOW TEST ===")
 
-# Create test user
 user, created = User.objects.get_or_create(
     username='checkout_test_user',
     defaults={'email': 'checkout@test.com', 'first_name': 'Test', 'last_name': 'User'}
@@ -38,32 +37,26 @@ if created:
 client = Client()
 client.force_login(user)
 
-# Find a product
 product = Product.objects.filter(is_active=True).first()
 if product:
     print(f"Product: {product.name} (ID: {product.id})")
     print(f"Stock: {product.stock_quantity}, Digital: {product.is_digital}")
     
-    # Add to cart
     cart_resp = client.post(f'/cart/add/{product.id}/', {'quantity': 1})
     print(f"Add to cart: {cart_resp.status_code}")
     
-    # Get checkout page
     checkout_resp = client.get('/checkout/')
     print(f"Checkout page: {checkout_resp.status_code}")
     
     body = checkout_resp.content.decode()
     
-    # Check for payment methods in form
     payment_methods = re.findall(r'name="payment_method"[^>]*value="([^"]+)"', body)
     print(f"Payment methods in form: {payment_methods}")
 
-    # Check for errors
     if 'errorlist' in body:
         errors = re.findall(r'<ul class="errorlist">(.*?)</ul>', body, re.DOTALL)
         print(f"Form errors found: {errors}")
 
-    # Test completing checkout with Nay Bank transfer (digital, no shipping)
     csrf_match = re.search(r'name="csrfmiddlewaretoken"[^>]*value="([^"]+)"', body)
     csrf_token = csrf_match.group(1) if csrf_match else ''
 
@@ -94,7 +87,6 @@ if product:
         if order_found:
             print(f"Order number: {order_found.group(1)}")
     
-    # Check orders
     orders = Order.objects.filter(user=user)
     print(f"Orders created: {orders.count()}")
     for o in orders:
@@ -161,7 +153,6 @@ from django.contrib.auth.models import User
 from store.models import Product, Cart, Order
 import re
 
-# Find a digital product
 product = Product.objects.filter(is_digital=True, is_active=True).first()
 if not product:
     print("NO DIGITAL PRODUCTS FOUND")
@@ -172,7 +163,6 @@ print(f"Price: Rs. {product.current_price}")
 print(f"Digital: {product.is_digital}")
 print()
 
-# Create test user
 user, _ = User.objects.get_or_create(
     username='checkout_test_user',
     defaults={'email': 'checkout@test.com', 'first_name': 'Test', 'last_name': 'User'}
@@ -183,7 +173,6 @@ user.save()
 client = Client()
 client.force_login(user)
 
-# Add to cart
 resp = client.post(f'/cart/add/{product.id}/', {'quantity': 1})
 print(f"Add to cart: {resp.status_code}")
 cart = Cart.objects.filter(user=user).first()
@@ -191,12 +180,10 @@ if cart:
     print(f"Cart total: Rs. {cart.total}, items: {cart.items_count}")
 print()
 
-# Get checkout page
 resp = client.get('/checkout/')
 print(f"Checkout GET: {resp.status_code}")
 body = resp.content.decode()
 
-# Check payment methods in form
 pm_section = re.search(r'name="payment_method".*?</select>', body, re.DOTALL)
 if pm_section:
     print("Payment methods found in form:")
@@ -204,7 +191,6 @@ if pm_section:
     for opt in options:
         print(f"  - {opt}")
 else:
-    # Check for radio buttons
     pm_radios = re.findall(r'name="payment_method".*?value="([^"]+)"', body)
     if pm_radios:
         print(f"Payment methods (radio): {pm_radios}")
@@ -215,7 +201,6 @@ else:
             print(f"Context: ...{body[max(0,idx-100):idx+200]}...")
 print()
 
-# Test each payment method
 test_data = {
     'csrfmiddlewaretoken': 'test',
     'billing_full_name': 'Test User',
@@ -233,7 +218,6 @@ test_data = {
 payment_methods = ['esewa', 'khalti', 'nay_bank', 'stripe', 'paypal']
 for pm in payment_methods:
     test_data['payment_method'] = pm
-    # Get fresh CSRF token
     resp = client.get('/checkout/')
     body = resp.content.decode()
     csrf_match = re.search(r'name="csrfmiddlewaretoken"\s+value="([^"]+)"', body)
@@ -245,7 +229,6 @@ for pm in payment_methods:
     if hasattr(resp, 'url'):
         print(f", redirect={resp.url}")
     else:
-        # Check if it's a form re-render with errors
         body = resp.content.decode()
         if 'errorlist' in body or 'This field is required' in body:
             errors = re.findall(r'<ul[^>]*class="[^"]*errorlist[^"]*".*?</ul>', body, re.DOTALL)
@@ -257,7 +240,6 @@ for pm in payment_methods:
                         print(f"    - {field.group(1)}")
             else:
                 print(f", FORM RE-RENDERED (no redirect)")
-                # Show what's in the response
                 title_match = re.search(r'<title>([^<]+)</title>', body)
                 if title_match:
                     print(f"    Title: {title_match.group(1)}")
@@ -268,13 +250,11 @@ for pm in payment_methods:
                 print(f"    Title: {title_match.group(1)}")
     print()
 
-# Check orders
 orders = Order.objects.filter(user=user)
 print(f"Orders created: {orders.count()}")
 for o in orders:
     print(f"  {o.order_number}: status={o.status}, payment={o.payment_method}")
 
-# Cleanup
 Order.objects.filter(user=user).delete()
 Cart.objects.filter(user=user).delete()
 user.delete()

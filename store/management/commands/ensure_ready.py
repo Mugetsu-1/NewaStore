@@ -48,9 +48,9 @@ from django.utils import timezone
 from store.models import Product, ProductImage
 
 STATE_FILE = settings.BASE_DIR / ".bootstrap_state.json"
-REPAIR_TTL = timedelta(hours=12)      # min interval between repair attempts
-AUDIT_TTL = timedelta(days=7)         # re-sweep stored URLs weekly
-DEFAULT_AUDIT_SLICE = 5000            # URLs probed per run
+REPAIR_TTL = timedelta(hours=12)
+AUDIT_TTL = timedelta(days=7)
+DEFAULT_AUDIT_SLICE = 5000
 
 
 class Command(BaseCommand):
@@ -72,7 +72,6 @@ class Command(BaseCommand):
                             help="URLs probed per audit run.")
         parser.add_argument("--workers", type=int, default=24)
 
-    # ------------------------------------------------------------ state I/O
 
     def _load_state(self):
         if STATE_FILE.exists():
@@ -91,7 +90,6 @@ class Command(BaseCommand):
         with STATE_FILE.open("w", encoding="utf-8") as fh:
             json.dump(state, fh, indent=2, default=str)
 
-    # ------------------------------------------------------------ utilities
 
     def _placeholder_count(self):
         return Product.objects.filter(
@@ -186,14 +184,12 @@ class Command(BaseCommand):
         qs = ProductImage.objects.filter(
             external_url__contains="capsule_616x353", thumbnail="")
         fixed = 0
-        # F-expression string replace keeps it to one SQL statement on PostgreSQL.
         from django.db.models.functions import Replace
         from django.db.models import Value
         fixed = qs.update(external_url=Replace(
             "external_url", Value("capsule_616x353.jpg"), Value("header.jpg")))
         return fixed
 
-    # ---------------------------------------------------------------- main
 
     def handle(self, *args, **options):
         force = options["force"]
@@ -201,7 +197,6 @@ class Command(BaseCommand):
         started = time.time()
         notes = []
 
-        # ---- 1. migrations --------------------------------------------------
         if not options["skip_migrate"]:
             pending = self._pending_migrations()
             if pending:
@@ -213,12 +208,10 @@ class Command(BaseCommand):
             else:
                 self.stdout.write("[1/6] Migrations: up to date.")
 
-        # ---- 1b. accounts + store email (so /admin login always works) -----
         self._ensure_superuser()
         self._ensure_demo_user()
         self._ensure_site_email()
 
-        # ---- 2. catalog import (only when the DB is empty) -------------------
         product_count = Product.objects.count()
         if not options["skip_import"]:
             if product_count == 0:
@@ -236,7 +229,6 @@ class Command(BaseCommand):
         else:
             product_count = Product.objects.count()
 
-        # ---- 3. artwork repair ------------------------------------------------
         placeholders = self._placeholder_count()
         if not options["skip_repair"]:
             last_at = self._parse_iso(state.get("repair_last_at"))
@@ -266,12 +258,6 @@ class Command(BaseCommand):
         else:
             placeholders = self._placeholder_count()
 
-        # ---- 4. normalize dead capsule URLs -> header.jpg (instant) ---------
-        # The SteamSpy import stored `capsule_616x353.jpg`, which 404s for a
-        # large slice of older apps. `header.jpg` is the universal Steam art
-        # file, so a single bulk UPDATE (no network) makes those cards render
-        # immediately - important on the async path, where the site may serve
-        # before materialize has localized every row.
         fixed = self._normalize_dead_capsule_urls()
         if fixed:
             self.stdout.write(self.style.SUCCESS(
@@ -280,11 +266,6 @@ class Command(BaseCommand):
         else:
             self.stdout.write("[4/6] Image URLs: no dead capsule pattern to normalize.")
 
-        # ---- 5. materialize local WebP thumbnails (fetch-once) --------------
-        # Download every hotlinked image once and store a local WebP so listing
-        # pages stop depending on Steam's CDN (the permanent fix for thumbnails
-        # that 403/404/rate-limit). Resumable: rows that already carry a
-        # thumbnail are skipped, so this only ever does new work.
         if not options["skip_materialize"]:
             pending_thumbs = (ProductImage.objects.exclude(external_url="")
                               .filter(thumbnail="", art_unavailable=False).count())
@@ -306,7 +287,6 @@ class Command(BaseCommand):
 
         self._state_after_handle = (state, options, notes, placeholders, started)
 
-        # ---- 5. resumable URL audit ----------------------------------------
         if not options["skip_audit"]:
             after_id = int(state.get("audit_after_id") or 0)
             completed_at = self._parse_iso(state.get("audit_completed_at"))

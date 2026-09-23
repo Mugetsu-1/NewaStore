@@ -7,22 +7,20 @@ Creates a throwaway user + orders and cleans them up afterwards.
 import os
 import sys
 
-# Use the in-memory email backend for this run: it exercises the real send path
-# without firing dozens of live emails at Gmail.
 os.environ["DJANGO_EMAIL_BACKEND"] = "django.core.mail.backends.locmem.EmailBackend"
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "newastore.settings")
-import django  # noqa: E402
+import django
 
 django.setup()
 
-from django.core import mail  # noqa: E402
+from django.core import mail
 
-from django.conf import settings  # noqa: E402
-from django.contrib.auth.models import User  # noqa: E402
-from django.test import Client  # noqa: E402
+from django.conf import settings
+from django.contrib.auth.models import User
+from django.test import Client
 
-from store.models import (  # noqa: E402
+from store.models import (
     Cart, Order, Product, ProductImage, SiteSettings,
 )
 
@@ -60,7 +58,7 @@ print(f"  Email     : {settings.EMAIL_BACKEND}")
 print(f"  From      : {settings.DEFAULT_FROM_EMAIL}")
 settings_src = open("newastore/settings.py", encoding="utf-8").read()
 views_src = open("store/views.py", encoding="utf-8").read()
-from dotenv import dotenv_values  # noqa: E402
+from dotenv import dotenv_values
 
 env = dotenv_values(".env")
 check("PostgreSQL in use", "postgresql" in settings.DATABASES["default"]["ENGINE"])
@@ -105,11 +103,10 @@ for label, url in routes:
     try:
         r = anon.get(url)
         check(f"{label} ({url})", r.status_code in (200, 301, 302), f"HTTP {r.status_code}")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         check(f"{label} ({url})", False, f"{type(exc).__name__}: {exc}")
 
 api_checks = [
-    # (label, url, validator)
     ("api health", "/api/health/", lambda d: d.get("status") == "ok" and d.get("database") is True),
     ("api genres", "/api/genres/", lambda d: isinstance(d, list) and len(d) > 0
      and {"slug", "name", "product_count"} <= set(d[0])),
@@ -123,7 +120,7 @@ for label, url, validator in api_checks:
         payload = r.json()
         check(f"{label} ({url})", r.status_code == 200 and validator(payload),
               f"HTTP {r.status_code}")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         check(f"{label} ({url})", False, f"{type(exc).__name__}: {exc}")
 
 print()
@@ -166,7 +163,6 @@ for value, label in [("esewa", "eSewa (Simulated)"), ("khalti", "Khalti (Simulat
                      ("nay_bank", "Nay Bank Transfer")]:
     check(f"checkout offers {value}", f'value="{value}"' in page and label in page)
 
-# --- eSewa simulated page
 resp = place_order(buyer, "esewa")
 order = Order.objects.filter(user=user).order_by("-id").first()
 body = resp.content.decode() if resp.status_code == 200 else ""
@@ -188,7 +184,6 @@ check("order confirmed", order.status == "confirmed")
 check("SIM transaction id stored", order.payment_transaction_id.startswith("SIM-"),
       order.payment_transaction_id)
 
-# --- simulate failure
 place_order(buyer, "khalti")
 order2 = Order.objects.filter(user=user).order_by("-id").first()
 resp = buyer.post(f"/payment/simulate/{order2.order_number}/khalti/", {"outcome": "failure"})
@@ -200,7 +195,6 @@ check("declined order marked failed", order2.payment_status == "failed")
 r = buyer.get(f"/payment/simulate/{order2.order_number}/stripe/")
 check("unknown gateway 404s", r.status_code == 404, f"HTTP {r.status_code}")
 
-# --- Nay Bank
 place_order(buyer, "nay_bank")
 order3 = Order.objects.filter(user=user).order_by("-id").first()
 bank_page = buyer.get(f"/order/success/{order3.order_number}/").content.decode()
@@ -241,7 +235,6 @@ check("anonymous admin request redirects to login",
       anon_admin.status_code == 302 and "login" in anon_admin.url.lower(),
       f"HTTP {anon_admin.status_code}")
 
-# Staff should see admin affordances on the storefront; shoppers must not.
 if admin_user:
     staff_home = ac.get("/").content.decode()
     anon_home = anon.get("/").content.decode()

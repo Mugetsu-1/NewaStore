@@ -29,9 +29,9 @@ STEAM_UA = {
     "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
 }
 STEAM_APPDETAILS = "https://store.steampowered.com/api/appdetails"
-APPDETAILS_MIN_INTERVAL = 1.0  # seconds between calls - stay polite
+APPDETAILS_MIN_INTERVAL = 1.0
 _last_appdetails_call = 0.0
-_appdetails_lock = threading.Lock()  # serialize the rate-limiter across workers
+_appdetails_lock = threading.Lock()
 
 
 class ArtworkError(Exception):
@@ -45,7 +45,6 @@ class ArtworkUnavailable(ArtworkError):
     hammering a dead appid on every boot."""
 
 
-# --------------------------------------------------------------- downloading
 
 def download_bytes(url, timeout=15):
     """Download an image; return raw bytes or raise ArtworkError.
@@ -61,7 +60,7 @@ def download_bytes(url, timeout=15):
         ctype = r.headers.get("Content-Type", "")
         if code not in (200, 206) or not ctype.startswith("image"):
             raise ArtworkError(f"HTTP {code} ({ctype or 'no content-type'})")
-        data = r.raw.read(8 * 1024 * 1024, decode_content=True)  # hard 8MB cap
+        data = r.raw.read(8 * 1024 * 1024, decode_content=True)
         r.close()
         if not data:
             raise ArtworkError("empty body")
@@ -83,7 +82,7 @@ def to_webp(data, max_width=None, quality=None):
             out = io.BytesIO()
             im.save(out, format="WEBP", quality=quality, method=5)
             return out.getvalue(), im.width, im.height
-    except Exception as exc:  # Pillow raises a family of errors
+    except Exception as exc:
         raise ArtworkError(f"WebP conversion failed: {exc}") from exc
 
 
@@ -105,11 +104,6 @@ def save_thumbnail(img_row, webp_bytes, save=True):
     return img_row.thumbnail.name
 
 
-# Steam serves the same art from several CDN mirrors and under several file
-# names. The SteamSpy import stored the modern `capsule_616x353.jpg`, which
-# 404s for a large slice of older/delisted apps even though `header.jpg` (and
-# the small capsule) still resolve on every mirror. These deterministic
-# fallbacks fix hotlink rot without any rate-limited appdetails call.
 STEAM_CDN_HOSTS = (
     "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps",
     "https://cdn.cloudflare.steamstatic.com/steam/apps",
@@ -167,9 +161,6 @@ def fetch_thumbnail(external_url, appid=None, timeout=15):
             continue
         webp, _w, _h = to_webp(raw)
         return webp, url
-    # Every deterministic candidate 404'd. Recent apps keep their art at a hashed
-    # path only the appdetails API resolves, so ask it (rate-limited, thread-safe)
-    # before giving up - this recovers the long tail of "missing" thumbnails.
     if appid:
         try:
             resolved = steam_header_image(appid)
@@ -177,9 +168,9 @@ def fetch_thumbnail(external_url, appid=None, timeout=15):
             webp, _w, _h = to_webp(raw)
             return webp, resolved
         except ArtworkUnavailable:
-            raise  # definitive: no art exists for this appid; caller marks it
+            raise
         except ArtworkError as exc:
-            last_err = exc  # transient (429/timeout/dead URL) - caller may retry
+            last_err = exc
     if last_err is None:
         return None
     raise last_err
@@ -205,7 +196,6 @@ def materialize_row(img_row, appid=None, timeout=15):
     return True
 
 
-# ----------------------------------------------------------------- resolvers
 
 def steam_header_image(appid):
     """Native artwork URL straight from Steam's appdetails API (rate-limited).
@@ -230,9 +220,6 @@ def steam_header_image(appid):
         raise ArtworkError(f"HTTP {r.status_code}")
     entry = (r.json() or {}).get(str(appid))
     if entry is None:
-        # HTTP 200 but no entry for this appid: Steam returns an empty/null body
-        # when it is rate-limiting, so treat this as transient (retry later),
-        # NOT as a definitive "no art exists".
         raise ArtworkError("appdetails returned no entry (rate-limited?)")
     if not entry.get("success"):
         raise ArtworkUnavailable("appdetails success=false (delisted or wrong appid)")

@@ -7,4 +7,4 @@ class StoreConfig(AppConfig):
     verbose_name = 'Newa Store'
 
     def ready(self):
-        import store.signals  # noqa: F401
+        import store.signals

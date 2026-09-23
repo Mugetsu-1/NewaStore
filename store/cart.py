@@ -16,7 +16,6 @@ class CartManager:
             return self._cart
         if self.request.user.is_authenticated:
             cart, _ = Cart.objects.get_or_create(user=self.request.user)
-            # Merge any session (guest) cart into the user's cart
             session_key = self.session.session_key
             if session_key:
                 guest_cart = Cart.objects.filter(session_key=session_key, user__isnull=True).first()

@@ -65,7 +65,6 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS('SteamSpy import run finished.'))
 
-    # ------------------------------------------------------------- pages
 
     def read_marker(self):
         try:
@@ -118,7 +117,6 @@ class Command(BaseCommand):
             self.write_marker(page)
             page += 1
 
-    # ------------------------------------------------------------ genres
 
     def run_genres(self):
         through = Product.tags.through

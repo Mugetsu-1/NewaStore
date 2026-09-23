@@ -17,9 +17,6 @@ class PayPalError(Exception):
     """Raised for any non-success PayPal API response."""
 
 
-# ---------------------------------------------------------------
-# Configuration helpers
-# ---------------------------------------------------------------
 
 def is_stripe_configured():
     return bool(settings.STRIPE_PUBLIC_KEY and settings.STRIPE_SECRET_KEY)
@@ -29,13 +26,6 @@ def is_paypal_configured():
     return bool(settings.PAYPAL_CLIENT_ID and settings.PAYPAL_SECRET)
 
 
-# ---------------------------------------------------------------
-# Simulated (demo) gateways — eSewa & Khalti
-# ---------------------------------------------------------------
-# This project is a portfolio/demo store, so the Nepali wallets are NOT wired
-# to the real eSewa/Khalti APIs. Instead checkout renders a locally hosted page
-# that mimics the wallet's payment screen and lets the shopper confirm or
-# decline a fake transaction. Nothing external is contacted, no money moves.
 SIMULATED_GATEWAYS = {
     'esewa': {
         'value': 'esewa',
@@ -63,7 +53,6 @@ SIMULATED_GATEWAYS = {
     },
 }
 
-# Bank-transfer details shown on the order page (demo account).
 BANK_TRANSFER_DETAILS = {
     'bank_name': 'Nay Bank',
     'account_name': 'Newa Store Pvt. Ltd.',
@@ -122,9 +111,6 @@ def _available_payment_method_choices():
     return enabled
 
 
-# ---------------------------------------------------------------
-# Stripe (official stripe-python SDK)
-# ---------------------------------------------------------------
 
 def _stripe():
     import stripe
@@ -137,7 +123,7 @@ def create_stripe_payment_intent(order):
     import stripe
     stripe.api_key = settings.STRIPE_SECRET_KEY
     return stripe.PaymentIntent.create(
-        amount=int(round(order.total, 2) * 100),  # minor units
+        amount=int(round(order.total, 2) * 100),
         currency=settings.STRIPE_CURRENCY,
         metadata={'order_number': order.order_number},
         description=f'Newa Store order {order.order_number}',
@@ -150,9 +136,6 @@ def retrieve_stripe_payment_intent(intent_id):
     return _stripe().PaymentIntent.retrieve(intent_id)
 
 
-# ---------------------------------------------------------------
-# PayPal (Orders v2 REST API via requests — no SDK dependency)
-# ---------------------------------------------------------------
 
 def _paypal_token():
     import requests

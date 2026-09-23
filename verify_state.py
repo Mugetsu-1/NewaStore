@@ -32,7 +32,6 @@ print(f'Total products: {total}')
 print(f'Products with images: {with_images}')
 print(f'Products without images: {no_images}')
 
-# Sample image URLs
 print('\n=== SAMPLE IMAGE URLs ===')
 products_with_images = Product.objects.filter(images__isnull=False).distinct()[:5]
 for p in products_with_images:
@@ -41,7 +40,6 @@ for p in products_with_images:
         src = img.src_url or 'No URL'
         print(f'{p.name[:40]}: {src[:100]}')
 
-# Check recent test results
 print('\n=== RECENT TESTS ===')
 print('Run: python manage.py test store --verbosity=1')
 print('(See test output below)')

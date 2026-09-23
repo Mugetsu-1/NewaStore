@@ -146,9 +146,6 @@ def _filtered_products(params):
     return products
 
 
-# ---------------------------------------------------------------
-# Endpoints
-# ---------------------------------------------------------------
 
 @api_view(['GET'])
 def search(request):

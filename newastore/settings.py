@@ -11,13 +11,8 @@ SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-your-secret-ke
 DEBUG = os.environ.get('DJANGO_DEBUG', 'True') == 'True'
 ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', '*').split(',')
 
-# Absolute base URL used in emails (order links, welcome CTA, …)
 SITE_BASE_URL = os.environ.get('SITE_BASE_URL', 'http://localhost:8000')
 
-# Jazzmin MUST be placed above django.contrib.admin.
-# 'store' must sit above 'django.contrib.staticfiles': command discovery gives
-# precedence to earlier apps, which lets our runserver override ship the
-# self-healing bootstrap.
 INSTALLED_APPS = [
     'jazzmin',
     'store',
@@ -78,9 +73,6 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'newastore.wsgi.application'
 
-# Database — PostgreSQL only (the SQLite fallback was removed).
-# Always talks to the Postgres instance described in .env (psycopg3,
-# non-default port 5433).
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
@@ -89,11 +81,10 @@ DATABASES = {
         'PASSWORD': os.environ.get('DB_PASSWORD', ''),
         'HOST': os.environ.get('DB_HOST', 'localhost'),
         'PORT': os.environ.get('DB_PORT', '5433'),
-        'CONN_MAX_AGE': 60,  # persistent connections
+        'CONN_MAX_AGE': 60,
     }
 }
 
-# Caching (genre nav, search-import negative cache, etc.)
 CACHES = {
     'default': {
         'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
@@ -113,23 +104,17 @@ TIME_ZONE = 'Asia/Kathmandu'
 USE_I18N = True
 USE_TZ = True
 
-# Static & media
 STATIC_URL = '/static/'
 STATICFILES_DIRS = [os.path.join(BASE_DIR, 'store/static')]
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
-# Artwork pipeline (store/artwork.py). Card art is downloaded once from the
-# source CDN and stored as a light WebP under MEDIA_ROOT, so listing pages
-# never depend on Steam's CDN at request time. 616px matches Steam's native
-# capsule width, so the same derivative is crisp on cards and detail pages.
 ARTWORK_THUMB_WIDTH = int(os.environ.get('ARTWORK_THUMB_WIDTH', 616))
 ARTWORK_WEBP_QUALITY = int(os.environ.get('ARTWORK_WEBP_QUALITY', 82))
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Authentication
 LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'home'
 LOGOUT_REDIRECT_URL = 'home'
@@ -138,7 +123,6 @@ AUTHENTICATION_BACKENDS = [
     'django.contrib.auth.backends.ModelBackend',
 ]
 
-# Messages -> framework-agnostic tags styled in templates
 from django.contrib.messages import constants as messages
 MESSAGE_TAGS = {
     messages.DEBUG: 'debug',
@@ -148,7 +132,6 @@ MESSAGE_TAGS = {
     messages.ERROR: 'error',
 }
 
-# Email
 EMAIL_BACKEND = os.environ.get(
     'DJANGO_EMAIL_BACKEND',
     'django.core.mail.backends.console.EmailBackend',
@@ -160,13 +143,6 @@ EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'Newa Store <newastore8@gmail.com>')
 
-# Payments
-# ---------------------------------------------------------------------------
-# Secrets never belong in source control: everything below is read from .env,
-# and the defaults are intentionally empty. eSewa/Khalti are SIMULATED in this
-# demo store (see store/payments.py), so their credentials are not required to
-# exercise the checkout flow.
-# ---------------------------------------------------------------------------
 ESEWA_MERCHANT_CODE = os.environ.get('ESEWA_MERCHANT_CODE', '')
 ESEWA_SECRET_KEY = os.environ.get('ESEWA_SECRET_KEY', '')
 ESEWA_URL = os.environ.get('ESEWA_URL', '')
@@ -174,9 +150,7 @@ KHALTI_PUBLIC_KEY = os.environ.get('KHALTI_PUBLIC_KEY', '')
 KHALTI_SECRET_KEY = os.environ.get('KHALTI_SECRET_KEY', '')
 STRIPE_PUBLIC_KEY = os.environ.get('STRIPE_PUBLIC_KEY', '')
 STRIPE_SECRET_KEY = os.environ.get('STRIPE_SECRET_KEY', '')
-# Webhook signing secret — REQUIRED in production (CLI: stripe listen --forward-to localhost:8000/webhooks/stripe/)
 STRIPE_WEBHOOK_SECRET = os.environ.get('STRIPE_WEBHOOK_SECRET', '')
-# Stripe does not support NPR; price the gateway charge in a supported currency.
 STRIPE_CURRENCY = os.environ.get('STRIPE_CURRENCY', 'usd')
 STRIPE_PRICE_LABEL = os.environ.get('STRIPE_PRICE_LABEL', 'USD $')
 PAYPAL_CLIENT_ID = os.environ.get('PAYPAL_CLIENT_ID', '')
@@ -186,7 +160,6 @@ PAYPAL_CURRENCY = os.environ.get('PAYPAL_CURRENCY', 'usd')
 PAYPAL_PRICE_LABEL = os.environ.get('PAYPAL_PRICE_LABEL', 'USD $')
 PAYPAL_SANDBOX = os.environ.get('PAYPAL_SANDBOX', 'True') == 'True'
 
-# Security (enable in production)
 if not DEBUG:
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
@@ -197,7 +170,6 @@ if not DEBUG:
     SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
 
-# Clean & User-Friendly Admin Dashboard Settings
 JAZZMIN_SETTINGS = {
     "site_title": "Newa Store Admin",
     "site_header": "Newa Store",

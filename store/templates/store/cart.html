@@ -55,7 +55,6 @@
             </div>
         </div>
 
-        <!-- Summary -->
         <aside class="summary">
             <h3 style="margin-bottom:18px">Order Summary</h3>
 
@@ -68,7 +67,6 @@
             <div class="summary-row"><span>Delivery</span><span>Free — digital</span></div>
             <div class="summary-row total"><span>Total</span><span class="val" id="cart-total">{{ currency_symbol }} {{ cart.total|floatformat:2 }}</span></div>
 
-            <!-- Coupon -->
             <div style="margin-top:20px;padding-top:20px;border-top:1px solid var(--border)">
                 {% if cart.coupon %}
                 <div class="flex-between" style="background:rgba(34,197,94,.1);padding:12px;border-radius:8px">

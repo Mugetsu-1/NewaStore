@@ -22,7 +22,6 @@ if media_root.exists():
 else:
     print("MEDIA_ROOT does not exist")
 
-# Check a sample product
 from store.models import Product, ProductImage
 sample = Product.objects.filter(images__isnull=False).first()
 if sample:

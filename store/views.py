@@ -46,17 +46,12 @@ from .utils import (
 User = get_user_model()
 
 
-# ============================================================
-# CATALOG
-# ============================================================
 
 def home(request):
     products = Product.objects.filter(is_active=True).select_related('category')\
         .prefetch_related('images', 'tags')
     featured = products.filter(is_featured=True)[:8]
 
-    # Hero banner: discounted featured games first, then the rest. Prefer the
-    # HD screenshots (gallery sort_order > 0) as full-bleed background art.
     hero_qs = (products.filter(is_featured=True)
                .order_by(F('discount_price').desc(nulls_last=True))[:4])
     hero_slides = []
@@ -85,10 +80,6 @@ def home(request):
         product_count=Count('products', filter=Q(products__is_active=True))
     ).filter(product_count__gt=0).order_by('-product_count')[:12]
 
-    # Dynamic hero: live catalog stats + a collage of REAL local cover art.
-    # card_image_url is local-only (WebP/local file, never a hotlinked CDN URL)
-    # per the artwork pipeline invariants, so the hero never hangs on a dead
-    # Steam link. 24 covers split across 3 marquee columns.
     hero_covers = [
         img.card_image_url
         for img in (ProductImage.objects.filter(product__is_active=True)
@@ -133,8 +124,6 @@ def product_list(request):
 
     q = request.GET.get('q')
     if q:
-        # Name has a pg_trgm GIN index — keep the heavy fields out of the
-        # search predicate so it stays fast at 60k+ rows.
         products = products.filter(
             Q(name__icontains=q) |
             Q(short_description__icontains=q) |
@@ -142,13 +131,11 @@ def product_list(request):
             Q(category__name__icontains=q)
         ).distinct()
 
-        # Zero local hits -> try a live import from CheapShark so any
-        # findable title (Sekiro, Elden Ring, ...) appears immediately.
         if len(q.strip()) >= 3 and not products.exists():
             try:
                 from .importers import import_search_query
                 if import_search_query(q.strip()) > 0:
-                    products = products.filter(  # re-run the same predicate
+                    products = products.filter(
                         Q(name__icontains=q) |
                         Q(short_description__icontains=q) |
                         Q(tags__name__icontains=q) |
@@ -158,7 +145,7 @@ def product_list(request):
                                   f'Imported live results for "{q}" from the '
                                   f'international stores.')
             except Exception:
-                pass  # never break search because an API is down
+                pass
 
     min_price = request.GET.get('min_price')
     max_price = request.GET.get('max_price')
@@ -272,8 +259,6 @@ def product_detail(request, slug):
     variants = product.variants.filter(is_active=True)
     reviews = product.reviews.filter(is_approved=True).select_related('user')
 
-    # Content-based recommendations (CSC381 Lab 4 / report Ch.7): ranked by
-    # weighted genre/category/rating/price similarity, each with a match reason.
     related = recommend_for_product(product, limit=4)
 
     user_review = None
@@ -307,9 +292,6 @@ def quick_view(request, slug):
     return render(request, 'store/partials/quick_view.html', {'product': product})
 
 
-# ============================================================
-# CART
-# ============================================================
 
 def cart_view(request):
     cart = CartManager(request).cart
@@ -420,9 +402,6 @@ def cart_mini(request):
     return render(request, 'store/partials/cart_mini.html', {'cart': cart})
 
 
-# ============================================================
-# CHECKOUT & PAYMENTS
-# ============================================================
 
 def checkout(request):
     manager = CartManager(request)
@@ -512,19 +491,14 @@ def _create_order_and_pay(request, form, manager):
                 )
             Coupon.objects.filter(pk=order.coupon.pk).update(used_count=F('used_count') + 1)
 
-    # Clear the cart now that order exists
     manager.clear()
 
     send_order_confirmation(order)
 
     payment_method = data['payment_method']
     if is_simulated_gateway(payment_method):
-        # eSewa / Khalti are demo wallets: render a local, self-contained
-        # payment screen instead of redirecting to the real gateway.
         return _initiate_simulated_gateway(request, order, payment_method)
     elif payment_method == 'nay_bank':
-        # Offline settlement: keep the order pending until an admin verifies
-        # the deposit. Bank details are shown on the order success page.
         messages.info(
             request,
             'Order placed. Complete the bank transfer using the details below so '
@@ -536,7 +510,6 @@ def _create_order_and_pay(request, form, manager):
     elif payment_method == 'paypal':
         return redirect('paypal_checkout', order_number=order.order_number)
     else:
-        # Any other gateway keeps the pending page
         return redirect('order_success', order_number=order.order_number)
 
 
@@ -599,9 +572,6 @@ def simulate_payment(request, order_number, gateway):
 
 
 
-# ============================================================
-# STRIPE (Payment Intents + webhook)
-# ============================================================
 
 def _order_for_payment(request, order_number):
     """Orders are paid by link — the order number is the bearer token."""
@@ -632,7 +602,7 @@ def stripe_create_intent(request, order_number):
         return JsonResponse({'success': True, 'already_paid': True})
     try:
         intent = create_stripe_payment_intent(order)
-    except Exception as exc:  # typed StripeError -> surface to the UI
+    except Exception as exc:
         return JsonResponse({'success': False, 'error': str(exc)}, status=502)
     return JsonResponse({'success': True, 'client_secret': intent.get('client_secret')})
 
@@ -681,9 +651,6 @@ def stripe_webhook(request):
     return HttpResponse(status=200)
 
 
-# ============================================================
-# PAYPAL (Orders v2 + webhook)
-# ============================================================
 
 def paypal_checkout(request, order_number):
     order = _order_for_payment(request, order_number)
@@ -742,7 +709,7 @@ def _verify_paypal_webhook(request, event_body):
     """
     webhook_id = getattr(settings, 'PAYPAL_WEBHOOK_ID', '')
     if not webhook_id:
-        return True  # dev mode
+        return True
     cert_url = request.META.get('HTTP_PAYPAL_CERT_URL', '')
     if not (cert_url.startswith('https://api-m.sandbox.paypal.com') or
             cert_url.startswith('https://api-m.paypal.com')):
@@ -853,9 +820,6 @@ def payment_failed(request, order_number):
     return render(request, 'store/payment_failed.html', {'order': order, 'page_title': 'Payment Failed'})
 
 
-# ============================================================
-# ORDERS
-# ============================================================
 
 def order_success(request, order_number):
     order = get_object_or_404(Order, order_number=order_number)
@@ -864,8 +828,6 @@ def order_success(request, order_number):
     return render(request, 'store/order_success.html', {
         'order': order,
         'page_title': 'Order Confirmed',
-        # Nay Bank Transfer orders stay pending until an admin verifies the
-        # deposit, so surface the account details on this page.
         'bank_details': BANK_TRANSFER_DETAILS if order.payment_method == 'nay_bank' else None,
         'is_simulated': is_simulated_gateway(order.payment_method),
     })
@@ -935,9 +897,6 @@ def reorder(request, order_number):
     return redirect('cart')
 
 
-# ============================================================
-# ACCOUNT
-# ============================================================
 
 @login_required
 def profile(request):
@@ -986,9 +945,6 @@ def my_reviews(request):
     return render(request, 'store/my_reviews.html', {'reviews': reviews, 'page_title': 'My Reviews'})
 
 
-# ============================================================
-# WISHLIST
-# ============================================================
 
 @login_required
 def wishlist_view(request):
@@ -1039,9 +995,6 @@ def wishlist_move_to_cart(request, item_id):
     return redirect('wishlist')
 
 
-# ============================================================
-# REVIEWS
-# ============================================================
 
 @require_POST
 @login_required
@@ -1070,9 +1023,6 @@ def mark_review_helpful(request, review_id):
     return JsonResponse({'success': True, 'helpful_votes': review.helpful_votes})
 
 
-# ============================================================
-# AUTH
-# ============================================================
 
 def register(request):
     if request.user.is_authenticated:
@@ -1119,9 +1069,6 @@ class CustomPasswordResetCompleteView(PasswordResetCompleteView):
     template_name = 'registration/password_reset_complete.html'
 
 
-# ============================================================
-# STATIC PAGES
-# ============================================================
 
 def about(request):
     return render(request, 'store/pages/about.html', {'page_title': 'About Us'})

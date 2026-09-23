@@ -6,7 +6,6 @@
 
     <div class="checkout-section" style="padding:0;overflow:hidden">
 
-        <!-- Wallet header (brand-coloured, mimics the real app) -->
         <div style="background:{{ meta.color }};padding:22px 24px;display:flex;align-items:center;gap:14px">
             <div style="width:48px;height:48px;border-radius:12px;background:rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center">
                 <i class="fas {{ meta.icon }}" style="font-size:1.4rem;color:#fff"></i>
@@ -18,7 +17,6 @@
             <i class="fas fa-lock" style="color:rgba(255,255,255,.75)"></i>
         </div>
 
-        <!-- Demo notice -->
         <div style="background:rgba(245,158,11,.12);border-bottom:1px solid rgba(245,158,11,.3);padding:12px 24px;display:flex;gap:10px;align-items:flex-start">
             <i class="fas fa-triangle-exclamation" style="color:#f59e0b;margin-top:2px"></i>
             <div style="font-size:.82rem;line-height:1.45">
@@ -32,7 +30,6 @@
         <form method="post" action="{% url 'simulate_payment' order.order_number gateway %}" style="padding:24px">
             {% csrf_token %}
 
-            <!-- Amount -->
             <div style="text-align:center;padding:16px 0 20px">
                 <div class="text-muted" style="font-size:.8rem;text-transform:uppercase;letter-spacing:.6px">Amount payable</div>
                 <div style="font-size:2.1rem;font-weight:800;color:{{ meta.color }}">
@@ -43,14 +40,12 @@
                 </div>
             </div>
 
-            <!-- Wallet id -->
             <div class="form-group">
                 <label class="form-label">{{ meta.id_label }}</label>
                 <input type="text" class="form-control" value="{{ meta.id_value }}" readonly
                        aria-describedby="wallet-id-help">
             </div>
 
-            <!-- MPIN -->
             <div class="form-group">
                 <label class="form-label">MPIN</label>
                 <input type="password" class="form-control" value="{{ meta.mpin }}" readonly>
@@ -59,7 +54,6 @@
                 </div>
             </div>
 
-            <!-- Actions -->
             <div style="display:grid;gap:10px;margin-top:22px">
                 <button type="submit" name="outcome" value="success" class="btn btn-block btn-lg"
                         style="background:{{ meta.color }};border-color:{{ meta.color }};color:#fff">

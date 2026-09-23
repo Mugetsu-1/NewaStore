@@ -52,20 +52,15 @@ class Command(StaticFilesRunserverCommand):
                                  "stay on one connection - and is kept polite to "
                                  "Steam's CDN. Raise it for faster first-run art.")
 
-    # --------------------------------------------------------------- hooks
 
     def inner_run(self, *args, **options):
         self._maybe_bootstrap(options)
         return super().inner_run(*args, **options)
 
-    # ------------------------------------------------------------ bootstrap
 
     def _should_bootstrap(self, options):
         if options.get("skip_bootstrap") or os.environ.get("NEWASTORE_SKIP_BOOTSTRAP"):
             return False
-        # Under the autoreloader, two processes execute this command: the
-        # watcher and the actual server (which sets RUN_MAIN=true). Only the
-        # serving process should bootstrap.
         if options.get("use_reloader", True) and os.environ.get("RUN_MAIN") != "true":
             return False
         return True
@@ -77,24 +72,16 @@ class Command(StaticFilesRunserverCommand):
 
         force = options.get("force_bootstrap", False)
         if options.get("async_bootstrap"):
-            # Old behavior: serve now, load data in the background.
             self.stdout.write("Bootstrap: running in background (--async-bootstrap); "
                               "some data may load after the server is up.")
             threading.Thread(target=self._bootstrap, args=(options, False),
                              name="newastore-bootstrap", daemon=True).start()
             return
 
-        # Default: finish everything the site needs BEFORE we start listening,
-        # so the URL only appears once the catalog, admin account and artwork
-        # are ready. The one long step (localizing thumbnails) is resumable, so
-        # a Ctrl-C during it is safe and the next start continues.
         self.stdout.write(self.style.MIGRATE_HEADING(
             "Bootstrap: preparing data before serving "
             "(migrations, admin, catalog, artwork). This can take a while on the\n"
             "first run; use 'runserver --async-bootstrap' to serve immediately instead."))
-        # The dead-link URL audit is a bounded background sweep, not needed
-        # before serving - run the blocking pipeline without it, then kick the
-        # audit off in a thread so boot isn't gated on network probing.
         self._bootstrap(options, skip_audit=True)
         threading.Thread(target=self._audit_only, args=(options,),
                          name="newastore-audit", daemon=True).start()
@@ -108,7 +95,7 @@ class Command(StaticFilesRunserverCommand):
                 skip_audit=skip_audit,
                 stdout=self.stdout, stderr=self.stderr,
             )
-        except Exception as exc:  # noqa: BLE001 - never take the server down
+        except Exception as exc:
             self.stdout.write(self.style.ERROR(
                 f"Bootstrap failed: {type(exc).__name__}: {exc}\n"
                 "  The server keeps running; fix the issue and restart, or run\n"
@@ -123,5 +110,5 @@ class Command(StaticFilesRunserverCommand):
                 skip_materialize=True,
                 stdout=self.stdout, stderr=self.stderr,
             )
-        except Exception:  # noqa: BLE001 - background sweep, never fatal
+        except Exception:
             pass

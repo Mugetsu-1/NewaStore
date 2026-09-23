@@ -11,7 +11,6 @@ print("=" * 70)
 print("NEWA STORE — STATUS DUMP")
 print("=" * 70)
 
-# 1. Artwork storage
 print("\n[1] ARTWORK STORAGE")
 print(f"  ARTWORK_STORAGE: {getattr(settings, 'ARTWORK_STORAGE', 'NOT SET')}")
 print(f"  FileBasedStorage.base_url: {settings.FILE_BASED_STORAGE.base_url if hasattr(settings, 'FILE_BASED_STORAGE') else 'n/a'}")
@@ -22,7 +21,6 @@ else:
     print(f"  local_path: {settings.ARTWORK_STORAGE.local_path}")
     print(f"  exists: NO — materialization NOT done")
 
-# 2. Products with/without artwork
 total = Product.objects.filter(is_active=True).count()
 with_art = Product.objects.filter(is_active=True, images__isnull=False).distinct().count()
 without_art = total - with_art
@@ -31,7 +29,6 @@ print(f"  Total active: {total}")
 print(f"  With artwork (Django relation): {with_art}")
 print(f"  Without artwork: {without_art}")
 
-# 3. Sample products - check what image URL they'd get
 print(f"\n[3] SAMPLE PRODUCT IMAGE URLS (first 10 with artwork + 5 without)")
 samples_with = list(Product.objects.filter(is_active=True, images__isnull=False).distinct()[:10])
 samples_without = list(Product.objects.filter(is_active=True, images__isnull=True)[:5])
@@ -49,7 +46,6 @@ for p in samples_without[:5]:
     local_exists = os.path.exists(local) if local else False
     print(f"  [{p.id}] {p.name[:40]:42s} django=NO  url={url[:50]} local_exists={local_exists}")
 
-# 4. What MaterializedImageStorage returns
 print(f"\n[4] WHAT THE WEBSITE SERVES (MaterializedImageStorage.url())")
 for p in samples_with[:3]:
     img = p.images.first()
@@ -67,7 +63,6 @@ for p in samples_without[:3]:
     except Exception as e:
         print(f"  [{p.id}] {p.name[:40]:42s} ERROR: {e}")
 
-# 5. Tests
 print(f"\n[5] RUNNING TESTS...")
 result = subprocess.run(
     [sys.executable, 'manage.py', 'test', 'store', '--verbosity=0'],

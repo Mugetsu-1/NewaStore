@@ -180,9 +180,6 @@ class CouponForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['applicable_categories'].queryset = Category.objects.filter(is_active=True)
-        # Product pickers: plain text inputs for "name or id" — rendering a
-        # widget with one entry per product would not scale past a few
-        # thousand products. Values resolve on save via _clean_product_picker.
         for field_name in ('applicable_products', 'excluded_products'):
             initial_ids = list(self.initial.get(field_name, []) or [])
             self.fields[field_name] = forms.CharField(
@@ -232,7 +229,6 @@ class CouponApplyForm(forms.Form):
 
 
 class CheckoutForm(forms.Form):
-    # Billing Address
     billing_full_name = forms.CharField(max_length=100, label='Full Name')
     billing_phone = forms.CharField(max_length=20, label='Phone Number')
     billing_email = forms.EmailField(label='Email Address')
@@ -243,7 +239,6 @@ class CheckoutForm(forms.Form):
     billing_postal_code = forms.CharField(max_length=20, label='Postal Code')
     billing_country = forms.CharField(max_length=100, initial='Nepal', label='Country')
 
-    # Payment Method
     PAYMENT_CHOICES = [
         ('esewa', 'eSewa (Simulated)'),
         ('khalti', 'Khalti (Simulated)'),
@@ -253,7 +248,6 @@ class CheckoutForm(forms.Form):
     ]
     payment_method = forms.ChoiceField(choices=PAYMENT_CHOICES, widget=forms.RadioSelect, initial='esewa')
 
-    # Additional
     order_notes = forms.CharField(widget=forms.Textarea(attrs={'rows': 3}), required=False, label='Order Notes')
     terms_accepted = forms.BooleanField(required=True, label='I agree to the Terms & Conditions')
 
@@ -261,9 +255,6 @@ class CheckoutForm(forms.Form):
         self.user = kwargs.pop('user', None)
         self.cart = kwargs.pop('cart', None)
         super().__init__(*args, **kwargs)
-        # Gateways that are not configured are shown as disabled hints rather than
-        # silently disappearing (so the checkout UI does not look degraded before
-        # keys are added to .env). Only actually-configured methods are selectable.
         self.fields['payment_method'].choices = _available_payment_method_choices()
 
         if self.user and getattr(self.user, 'is_authenticated', False):

@@ -5,7 +5,7 @@ from .models import SiteSettings, Category, Tag, Cart
 from .cart import CartManager
 
 GENRE_CACHE_KEY = 'nav_genres_v1'
-GENRE_CACHE_TTL = 60  # seconds
+GENRE_CACHE_TTL = 60
 
 
 def site_settings(request):
@@ -22,8 +22,6 @@ def site_settings(request):
 def navigation(request):
     categories = Category.objects.filter(is_active=True, parent__isnull=True).prefetch_related('children')
 
-    # Genre chips are expensive to annotate on every request with a huge
-    # catalog — cache the result for a minute.
     genres = cache.get(GENRE_CACHE_KEY)
     if genres is None:
         genres = list(

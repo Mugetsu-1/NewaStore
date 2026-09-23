@@ -121,13 +121,12 @@ class Command(BaseCommand):
             .values_list("id", "sku"))
         other = missing.filter(steam_app_id__isnull=True).exclude(
             data_source="cheapshark", sku__startswith="CS-").count()
-        stats["cs_miss"] += other  # no recovery source for these
+        stats["cs_miss"] += other
 
         self.stdout.write(f"  steam-appid products : {len(steam_targets):,}")
         self.stdout.write(f"  cheapshark products  : {len(cs_products):,}"
                           + ("  (skipped)" if skip_cs else ""))
 
-        # ---- 1. Steam CDN -------------------------------------------------
         with futures.ThreadPoolExecutor(max_workers=workers) as pool:
             pending = {pool.submit(find_steam_art, appid): pid
                        for pid, appid in steam_targets}
@@ -137,7 +136,7 @@ class Command(BaseCommand):
                 done += 1
                 try:
                     url = fut.result()
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     stats["failed"] += 1
                     if verbosity >= 2:
                         self.stderr.write(f"  steam probe error id={pid}: {exc}")
@@ -150,7 +149,6 @@ class Command(BaseCommand):
                     self.stdout.write(f"  steam {done}/{len(steam_targets)} "
                                       f"(recovered={stats['recovered']:,})")
 
-        # ---- 2. CheapShark thumbs (batched) --------------------------------
         if cs_products and not skip_cs:
             self.stdout.write(f"  querying CheapShark for {len(cs_products):,} thumb(s)...")
             by_sku = {sku: pid for pid, sku in cs_products}
@@ -168,10 +166,10 @@ class Command(BaseCommand):
                     else:
                         if verbosity >= 2:
                             self.stderr.write(f"  cheapshark HTTP {r.status_code} at batch {i}")
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     if verbosity >= 2:
                         self.stderr.write(f"  cheapshark error at batch {i}: {exc}")
-                time.sleep(1.2)  # stay polite with the API
+                time.sleep(1.2)
 
             self.stdout.write(
                 f"  cheapshark returned {len(cs_thumbs):,} thumb(s); verifying...")

@@ -39,11 +39,6 @@ class Command(BaseCommand):
         timeout = options["timeout"]
         verbosity = options["verbosity"]
 
-        # Read every target once, up front, on the main thread. Workers get
-        # plain tuples (id, product_id, external_url, appid) and never touch the
-        # ORM, so the whole sweep uses exactly one database connection no matter
-        # how many workers run - the fix for "too many clients"/"remaining
-        # connection slots" exhaustion when connections were thread-local.
         qs = (ProductImage.objects.exclude(external_url="")
               .filter(thumbnail="", art_unavailable=False)
               .select_related("product")
@@ -80,29 +75,22 @@ class Command(BaseCommand):
                 try:
                     (_t, webp, url) = fut.result()
                 except artwork.ArtworkUnavailable:
-                    # Source confirms no art exists (delisted app). Mark the row
-                    # so future boots skip it instead of re-probing a dead appid
-                    # every time - this is what keeps boots fast and quiet.
                     unavailable += 1
                     dead_pks.append(pk)
                     continue
                 except artwork.ArtworkError as exc:
                     failed += 1
-                    # A transient miss (404/403/timeout/rate-limit) is expected
-                    # for the long tail and retryable, so keep it out of the boot
-                    # log. Use -v2 to see every per-row miss.
                     if verbosity >= 2:
                         self.stderr.write(f"  [{pk}] {exc}")
                     continue
-                except Exception as exc:  # noqa: BLE001 - keep the sweep going
+                except Exception as exc:
                     failed += 1
                     if verbosity >= 2:
                         self.stderr.write(f"  [{pk}] {type(exc).__name__}: {exc}")
                     continue
                 if webp is None:
-                    failed += 1  # no URL/appid (should not happen here)
+                    failed += 1
                     continue
-                # --- single-threaded DB write (main thread only) -------------
                 try:
                     row = ProductImage(id=pk, product_id=product_id)
                     name = artwork.save_thumbnail(row, webp, save=False)
@@ -111,13 +99,11 @@ class Command(BaseCommand):
                         fields["external_url"] = url
                     ProductImage.objects.filter(pk=pk).update(**fields)
                     ok += 1
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     failed += 1
                     self.stderr.write(f"  [{pk}] save failed: {type(exc).__name__}: {exc}")
 
         if dead_pks:
-            # One main-thread write: flag the confirmed-delisted rows so the
-            # pending query (here and in ensure_ready) skips them for good.
             ProductImage.objects.filter(pk__in=dead_pks).update(art_unavailable=True)
 
         remaining = (ProductImage.objects.exclude(external_url="")

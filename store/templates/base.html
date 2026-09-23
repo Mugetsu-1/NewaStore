@@ -10,7 +10,6 @@
     <meta name="keywords" content="{% block meta_keywords %}{{ site_settings.meta_keywords|default:'ecommerce, games, electronics, online store' }}{% endblock %}">
     <meta name="csrf-token" content="{{ csrf_token }}">
 
-    <!-- Open Graph -->
     <meta property="og:type" content="website">
     <meta property="og:title" content="{{ page_title|default:'Newa Store' }}">
     <meta property="og:description" content="{{ meta_description|default:site_settings.meta_description|default:'Shop the latest products at Newa Store.' }}">
@@ -20,8 +19,6 @@
     <link rel="icon" href="{% if site_settings.favicon %}{{ site_settings.favicon.url }}{% else %}{% static 'images/logo.png' %}{% endif %}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="{% static 'css/style.css' %}">
-    <!-- Tailwind (utility classes for the storefront). Preflight is disabled
-         so it does not reset styles of pages built on the legacy design system. -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -39,7 +36,6 @@
     </script>
     {% block extra_css %}{% endblock %}
 
-    {# Google Analytics 4 — loads only when an ID is configured in Site Settings #}
     {% if site_settings.google_analytics_id %}
     <script async src="https://www.googletagmanager.com/gtag/js?id={{ site_settings.google_analytics_id }}"></script>
     <script>
@@ -52,7 +48,6 @@
     {% block extra_head %}{% endblock %}
 </head>
 <body data-placeholder-url="{% static 'images/placeholder.svg' %}">
-    <!-- Topbar -->
     <div class="topbar">
         <div class="container">
             <div class="topbar-links">
@@ -67,7 +62,6 @@
         </div>
     </div>
 
-    <!-- Header -->
     <header class="header">
         <div class="container header-main">
             <a href="{% url 'home' %}" class="logo">
@@ -161,7 +155,6 @@
         </div>
     </header>
 
-    <!-- Messages -->
     <div class="messages-wrap">
         {% for message in messages %}
         <div class="alert alert-{{ message.tags|default:'info' }}">
@@ -172,7 +165,6 @@
         {% endfor %}
     </div>
 
-    <!-- Cart Drawer -->
     <div class="drawer-overlay" onclick="closeCart()"></div>
     <aside class="drawer">
         <div class="drawer-head">
@@ -210,7 +202,6 @@
     </section>
     {% endblock %}
 
-    <!-- Footer -->
     <footer class="footer">
         <div class="container">
             <div class="footer-grid">
