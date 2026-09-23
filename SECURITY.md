@@ -42,7 +42,6 @@ Status legend: **✅ Implemented** · **🟡 Partial** · **⛔ Gap** (see §B).
 | 5 | XSS prevention | Django template auto-escaping on all rendered context | 🟡 | templates under `store/templates/`; see §B (no CSP) |
 | 6 | SQL injection prevention | Django ORM parameterizes all queries; no raw string-interpolated SQL | ✅ | `store/views.py`, `store/models.py` (ORM `filter`/`Q`) |
 | 7 | Clickjacking | `XFrameOptionsMiddleware` + `X_FRAME_OPTIONS='DENY'` | ✅ | `newastore/settings.py` |
-
 | 8 | Transport security (HTTPS/HSTS) | When `DEBUG=False`: `SECURE_SSL_REDIRECT`, HSTS 1 year with `includeSubDomains` + preload, `SECURE_PROXY_SSL_HEADER` for TLS-terminating proxies | ✅ (prod) | `if not DEBUG:` block in `newastore/settings.py` |
 | 9 | Secure cookies | `SESSION_COOKIE_HTTPONLY=True`, `SESSION_COOKIE_SAMESITE`/`CSRF_COOKIE_SAMESITE='Lax'` always; `SESSION_COOKIE_SECURE`/`CSRF_COOKIE_SECURE` when `DEBUG=False` | ✅ | `newastore/settings.py` |
 | 10 | Secrets management | Secrets read from environment/`.env`; `.env` is git-ignored and untracked; `SECRET_KEY` **raises** `ImproperlyConfigured` if unset while `DEBUG=False`; no usable secret literals in source | ✅ | `SECRET_KEY` guard in `newastore/settings.py`; `.gitignore` |
@@ -83,7 +82,7 @@ coursework build. Each should be revisited before a real production launch.
 ## C. Manual test matrix (T1–T12)
 
 Run against a development/staging database only. Many rows have **automated
-coverage** in `store/tests.py` (73 tests) and `verify_all.py` (70 end-to-end
+coverage** in `store/tests.py` (62 tests) and `verify_all.py` (68 end-to-end
 checks); those are noted per row. Rows without automated coverage rely on the
 named framework control and should be spot-checked manually.
 
@@ -95,7 +94,6 @@ named framework control and should be spot-checked manually.
 | T4 | Authorization / IDOR | As user A, request user B's `/orders/<n>/` and `/orders/<n>/invoice/` | `404` (no cross-account disclosure) | `store/views.py` ownership checks; manual cross-account check |
 | T5 | Admin access control | Request `/admin/` anonymously; load storefront as anon, customer, and staff | Anonymous `/admin/` → redirect to login; admin links render only for staff | `verify_all.py` §5 (anon redirect, staff-only links, no links for shopper) |
 | T6 | CSRF | POST to `/checkout/` (or add-to-cart) omitting the CSRF token | Rejected with `403 Forbidden` | Framework (`CsrfViewMiddleware`); manual |
-
 | T7 | Stored/reflected XSS | Submit `<script>alert(1)</script>` in a review, contact message, and search query | Rendered escaped as text; no script executes | Framework (template auto-escaping); manual |
 | T8 | SQL injection | Search for `' OR 1=1 --` and `"; DROP TABLE store_product; --` | Treated as a literal query; no error, no injection | Framework (ORM parameterization); manual |
 | T9 | eSewa signature integrity | Complete checkout via eSewa; replay the callback with a **tampered `total_amount`**; replay a **valid** signed callback twice | Tampered/forged callback → order stays unpaid, redirect to payment-failed; valid callback → paid + confirmed; second valid callback is idempotent | `store/tests.py` (`RealGatewayTests`); `verify_all.py` §4 |
