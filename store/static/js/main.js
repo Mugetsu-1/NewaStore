@@ -318,16 +318,6 @@
     radio.closest('.radio-card').classList.add('selected');
   });
 
-  // ---------- Shipping toggle on checkout ----------
-  const shippingRadios = $$('input[name="shipping_option"]');
-  function toggleShipping() {
-    const val = shippingRadios.find((r) => r.checked);
-    const box = $('#shipping-address-box');
-    if (box) box.style.display = val && val.value === 'different' ? 'block' : 'none';
-  }
-  shippingRadios.forEach((r) => r.addEventListener('change', toggleShipping));
-  toggleShipping();
-
   // ---------- Countdown timers ----------
   $$('[data-countdown]').forEach((el) => {
     const end = new Date(el.dataset.countdown).getTime();
@@ -509,7 +499,6 @@
         esewa: 'Opening the eSewa payment screen…',
         khalti: 'Opening the Khalti payment screen…',
         nay_bank: 'Placing order — bank details next…',
-        cod: 'Placing your order…',
         stripe: 'Redirecting to card payment…',
         paypal: 'Redirecting to PayPal…',
       };
