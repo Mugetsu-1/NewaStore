@@ -404,15 +404,15 @@ table.data tr:hover td { background:var(--surface-2); }
 
 /* ---------- Filters sidebar ---------- */
 .shop-layout { display:grid; grid-template-columns:260px 1fr; gap:32px; align-items:start; }
-.filters { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:22px; position:sticky; top:calc(var(--header-h) + 20px); }
+.filters { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:22px; position:sticky; top:calc(var(--header-h) + 20px); max-height:calc(100vh - var(--header-h) - 40px); overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; scrollbar-color:var(--border) transparent; }
+.filters::-webkit-scrollbar { width:8px; }
+.filters::-webkit-scrollbar-track { background:transparent; }
+.filters::-webkit-scrollbar-thumb { background:var(--border); border-radius:999px; }
+.filters::-webkit-scrollbar-thumb:hover { background:var(--text-muted); }
 .filter-block { padding:16px 0; border-bottom:1px solid var(--border); }
 .filter-block:last-child { border-bottom:none; }
 .filter-block h4 { font-size:.9rem; margin-bottom:14px; }
-.filter-list { display:flex; flex-direction:column; gap:9px; max-height:240px; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; scrollbar-color:var(--border) transparent; padding-right:6px; }
-.filter-list::-webkit-scrollbar { width:8px; }
-.filter-list::-webkit-scrollbar-track { background:transparent; }
-.filter-list::-webkit-scrollbar-thumb { background:var(--border); border-radius:999px; }
-.filter-list::-webkit-scrollbar-thumb:hover { background:var(--text-muted); }
+.filter-list { display:flex; flex-direction:column; gap:9px; }
 .filter-list label { display:flex; align-items:center; gap:9px; font-size:.88rem; color:var(--text-muted); cursor:pointer; }
 .filter-list input { accent-color:var(--primary); }
 
@@ -437,6 +437,7 @@ table.data tr:hover td { background:var(--surface-2); }
   .auth-visual { display:none; }
   .auth-wrap { grid-template-columns:1fr; }
   .filters, .summary, .account-nav { position:static; }
+  .filters { max-height:none; overflow:visible; }
   .search-bar { display:none; }
 }
 @media (max-width:768px) {
