@@ -8,6 +8,7 @@ from django.conf import settings
 from django.test import TestCase, Client
 from django.contrib.auth.models import User
 from django.core import mail
+from django.core.exceptions import ValidationError
 from django.urls import reverse
 from django.utils import timezone
 from datetime import timedelta
@@ -19,6 +20,7 @@ from .models import (
 )
 from .cart import CartManager
 from .utils import mark_order_paid
+from .validators import validate_gmail, validate_nepali_mobile
 
 
 def make_product(**kwargs):
@@ -186,16 +188,43 @@ class ViewTests(TestCase):
     def test_register(self):
         response = self.client.post(reverse('register'), {
             'username': 'newuser', 'first_name': 'New', 'last_name': 'User',
-            'email': 'new@example.com', 'password1': 'complexpass123',
+            'email': 'new@gmail.com', 'password1': 'complexpass123',
             'password2': 'complexpass123',
         })
         self.assertEqual(response.status_code, 302)
         self.assertTrue(User.objects.filter(username='newuser').exists())
 
-    def test_newsletter_subscribe(self):
-        response = self.client.post(reverse('newsletter_subscribe'), {'email': 'n@example.com'})
+    def test_register_rejects_non_gmail_email(self):
+        response = self.client.post(reverse('register'), {
+            'username': 'yahoouser', 'first_name': 'Ya', 'last_name': 'Hoo',
+            'email': 'someone@yahoo.com', 'password1': 'complexpass123',
+            'password2': 'complexpass123',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(User.objects.filter(username='yahoouser').exists())
+
+    def test_register_rejects_bad_phone(self):
+        response = self.client.post(reverse('register'), {
+            'username': 'badphone', 'first_name': 'Bad', 'last_name': 'Phone',
+            'email': 'badphone@gmail.com', 'phone': '1234567890',
+            'password1': 'complexpass123', 'password2': 'complexpass123',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(User.objects.filter(username='badphone').exists())
+
+    def test_register_accepts_nepali_phone_with_country_code(self):
+        response = self.client.post(reverse('register'), {
+            'username': 'goodphone', 'first_name': 'Good', 'last_name': 'Phone',
+            'email': 'goodphone@gmail.com', 'phone': '+977 9841-234567',
+            'password1': 'complexpass123', 'password2': 'complexpass123',
+        })
         self.assertEqual(response.status_code, 302)
-        self.assertTrue(NewsletterSubscriber.objects.filter(email='n@example.com').exists())
+        self.assertTrue(User.objects.filter(username='goodphone').exists())
+
+    def test_newsletter_subscribe(self):
+        response = self.client.post(reverse('newsletter_subscribe'), {'email': 'n@gmail.com'})
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(NewsletterSubscriber.objects.filter(email='n@gmail.com').exists())
 
 
 class CheckoutTests(TestCase):
@@ -208,7 +237,7 @@ class CheckoutTests(TestCase):
     def _checkout_payload(self):
         return {
             'billing_full_name': 'Buyer One', 'billing_phone': '9800000000',
-            'billing_email': 'buyer@example.com', 'billing_address_line_1': 'Main St',
+            'billing_email': 'buyer@gmail.com', 'billing_address_line_1': 'Main St',
             'billing_address_line_2': '', 'billing_city': 'Kathmandu',
             'billing_state': 'Bagmati', 'billing_postal_code': '44600',
             'billing_country': 'Nepal',
@@ -252,7 +281,7 @@ class CheckoutTests(TestCase):
         order = Order.objects.first()
         self.assertIsNotNone(order)
         self.assertIsNone(order.user)
-        self.assertEqual(order.guest_email, 'buyer@example.com')
+        self.assertEqual(order.guest_email, 'buyer@gmail.com')
 
     def test_order_totals_include_tax_no_shipping(self):
         self.client.login(username='buyer', password='pass12345')
@@ -324,7 +353,7 @@ class AuthFlowTests(TestCase):
             'username': 'newgamer',
             'first_name': 'New',
             'last_name': 'Gamer',
-            'email': 'newgamer@example.com',
+            'email': 'newgamer@gmail.com',
             'phone': '',
             'password1': 'StrongPass!123',
             'password2': 'StrongPass!123',
@@ -403,7 +432,7 @@ class PaymentFulfillmentTests(TestCase):
         self.client.post(reverse('add_to_cart', args=[product.id]), {'quantity': 1})
         payload = {
             'billing_full_name': 'Buyer Three', 'billing_phone': '9800000000',
-            'billing_email': 'buyer3@example.com', 'billing_address_line_1': 'Main St',
+            'billing_email': 'buyer3@gmail.com', 'billing_address_line_1': 'Main St',
             'billing_address_line_2': '', 'billing_city': 'Kathmandu',
             'billing_state': 'Bagmati', 'billing_postal_code': '44600',
             'billing_country': 'Nepal',
@@ -544,12 +573,12 @@ class ApiTests(TestCase):
     def test_contact_creates_message_and_emails(self):
         response = self.client.post(reverse('api_contact'), {
             'name': 'API Fan',
-            'email': 'fan@example.com',
+            'email': 'fan@gmail.com',
             'subject': 'Question',
             'message': 'Is this store open?',
         })
         self.assertEqual(response.status_code, 201)
-        self.assertTrue(ContactMessage.objects.filter(email='fan@example.com').exists())
+        self.assertTrue(ContactMessage.objects.filter(email='fan@gmail.com').exists())
         self.assertEqual(len(mail.outbox), 1)
 
     def test_contact_rejects_invalid(self):
@@ -576,7 +605,7 @@ class RealGatewayTests(TestCase):
         self.client.post(reverse('add_to_cart', args=[self.product.id]), {'quantity': 1})
         payload = {
             'billing_full_name': 'Sim Buyer', 'billing_phone': '9800000000',
-            'billing_email': 'sim@example.com', 'billing_address_line_1': 'Main St',
+            'billing_email': 'sim@gmail.com', 'billing_address_line_1': 'Main St',
             'billing_address_line_2': '', 'billing_city': 'Kathmandu',
             'billing_state': 'Bagmati', 'billing_postal_code': '44600',
             'billing_country': 'Nepal',
@@ -691,3 +720,68 @@ class RealGatewayTests(TestCase):
             reverse('order_success', args=[order.order_number])).content.decode()
         self.assertNotIn('Complete your bank transfer', html)
         self.assertNotIn('0123456789012', html)
+
+
+class FormValidatorTests(TestCase):
+    def test_gmail_accepted_and_normalized(self):
+        self.assertEqual(validate_gmail('  User.Name@Gmail.COM '), 'user.name@gmail.com')
+
+    def test_non_gmail_rejected(self):
+        for bad in ['a@yahoo.com', 'a@hotmail.com', 'a@gmail.co', 'a@sub.gmail.com', 'a@googlemail.com']:
+            with self.assertRaises(ValidationError):
+                validate_gmail(bad)
+
+    def test_nepali_mobile_normalized(self):
+        self.assertEqual(validate_nepali_mobile('9841234567'), '9841234567')
+        self.assertEqual(validate_nepali_mobile('+977 9841-234567'), '9841234567')
+        self.assertEqual(validate_nepali_mobile('977-9746000000'), '9746000000')
+        self.assertEqual(validate_nepali_mobile('9612345678'), '9612345678')
+
+    def test_nepali_mobile_rejected(self):
+        for bad in ['1234567890', '9500000000', '984123456', '98412345678', 'not-a-number']:
+            with self.assertRaises(ValidationError):
+                validate_nepali_mobile(bad)
+
+    def test_blank_phone_allowed(self):
+        self.assertEqual(validate_nepali_mobile(''), '')
+
+
+class CheckoutValidationTests(TestCase):
+    def setUp(self):
+        SiteSettings.get_settings()
+        self.product = make_product(stock_quantity=10)
+        self.user = User.objects.create_user(
+            'valbuyer', password='pass12345', email='valbuyer@gmail.com')
+
+    def _payload(self, **overrides):
+        data = {
+            'billing_full_name': 'Val Buyer', 'billing_phone': '9800000000',
+            'billing_email': 'valbuyer@gmail.com', 'billing_address_line_1': 'Main St',
+            'billing_address_line_2': '', 'billing_city': 'Kathmandu',
+            'billing_state': 'Bagmati', 'billing_postal_code': '44600',
+            'billing_country': 'Nepal', 'payment_method': 'nay_bank',
+            'order_notes': '', 'terms_accepted': 'on',
+        }
+        data.update(overrides)
+        return data
+
+    def _add_and_post(self, **overrides):
+        self.client.login(username='valbuyer', password='pass12345')
+        self.client.post(reverse('add_to_cart', args=[self.product.id]), {'quantity': 1})
+        return self.client.post(reverse('checkout'), self._payload(**overrides))
+
+    def test_checkout_rejects_non_gmail_email(self):
+        response = self._add_and_post(billing_email='buyer@yahoo.com')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Order.objects.count(), 0)
+
+    def test_checkout_rejects_non_nepali_phone(self):
+        response = self._add_and_post(billing_phone='1234567890')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Order.objects.count(), 0)
+
+    def test_checkout_normalizes_phone_before_saving(self):
+        self._add_and_post(billing_phone='+977 9841-234567')
+        order = Order.objects.first()
+        self.assertIsNotNone(order)
+        self.assertEqual(order.billing_address['phone'], '9841234567')

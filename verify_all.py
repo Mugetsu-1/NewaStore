@@ -155,7 +155,7 @@ def place_order(client, method):
     client.post(f"/cart/add/{checkout_product.id}/", {"quantity": 1})
     return client.post("/checkout/", {
         "billing_full_name": "Verify Flow", "billing_phone": "9800000000",
-        "billing_email": "verify@example.com", "billing_address_line_1": "Test St",
+        "billing_email": "verify@gmail.com", "billing_address_line_1": "Test St",
         "billing_address_line_2": "", "billing_city": "Kathmandu",
         "billing_state": "Bagmati", "billing_postal_code": "44600",
         "billing_country": "Nepal", "payment_method": method,

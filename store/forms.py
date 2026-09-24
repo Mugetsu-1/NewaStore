@@ -4,25 +4,44 @@ from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from .payments import _available_payment_method_choices
 from .models import Review, Category, NewsletterSubscriber, ContactMessage, SavedBillingDetail
+from .validators import validate_gmail, validate_nepali_mobile
+
+GMAIL_WIDGET_ATTRS = {
+    'type': 'email',
+    'placeholder': 'you@gmail.com',
+    'pattern': r'[a-zA-Z0-9._%+\-]+@gmail\.com',
+    'title': 'Enter a Gmail address ending in @gmail.com',
+}
+PHONE_WIDGET_ATTRS = {
+    'type': 'tel',
+    'inputmode': 'numeric',
+    'placeholder': '9841234567',
+    'pattern': r'(\+?977)?9[678]\d{8}',
+    'title': 'Nepali mobile number: 10 digits starting with 98, 97 or 96',
+    'maxlength': '20',
+}
 
 
 class CustomRegisterForm(UserCreationForm):
-    email = forms.EmailField(required=True)
+    email = forms.EmailField(required=True, widget=forms.EmailInput(attrs=GMAIL_WIDGET_ATTRS))
     first_name = forms.CharField(max_length=30, required=True)
     last_name = forms.CharField(max_length=30, required=True)
-    phone = forms.CharField(max_length=20, required=False)
+    phone = forms.CharField(max_length=20, required=False, widget=forms.TextInput(attrs=PHONE_WIDGET_ATTRS))
 
     class Meta:
         model = User
         fields = ['username', 'first_name', 'last_name', 'email', 'phone', 'password1', 'password2']
 
     def clean_email(self):
-        email = self.cleaned_data.get('email', '').strip().lower()
-        
+        email = validate_gmail(self.cleaned_data.get('email', ''))
+
         if User.objects.filter(email=email).exists():
             raise ValidationError("This email is already registered.")
-        
+
         return email
+
+    def clean_phone(self):
+        return validate_nepali_mobile(self.cleaned_data.get('phone', ''))
 
     def clean_username(self):
         username = self.cleaned_data.get('username', '').strip().lower()
@@ -43,18 +62,24 @@ class CustomRegisterForm(UserCreationForm):
 
 
 class UserProfileForm(forms.ModelForm):
-    phone = forms.CharField(max_length=20, required=False)
+    phone = forms.CharField(max_length=20, required=False, widget=forms.TextInput(attrs=PHONE_WIDGET_ATTRS))
     date_of_birth = forms.DateField(required=False, widget=forms.DateInput(attrs={'type': 'date'}))
 
     class Meta:
         model = User
         fields = ['first_name', 'last_name', 'email']
+        widgets = {
+            'email': forms.EmailInput(attrs=GMAIL_WIDGET_ATTRS),
+        }
 
     def clean_email(self):
-        email = self.cleaned_data.get('email', '').strip().lower()
+        email = validate_gmail(self.cleaned_data.get('email', ''))
         if User.objects.filter(email=email).exclude(pk=self.instance.pk).exists():
             raise ValidationError("This email is already in use.")
         return email
+
+    def clean_phone(self):
+        return validate_nepali_mobile(self.cleaned_data.get('phone', ''))
 
 
 class ReviewForm(forms.ModelForm):
@@ -89,8 +114,8 @@ class CouponApplyForm(forms.Form):
 
 class CheckoutForm(forms.Form):
     billing_full_name = forms.CharField(max_length=100, label='Full Name')
-    billing_phone = forms.CharField(max_length=20, label='Phone Number')
-    billing_email = forms.EmailField(label='Email Address')
+    billing_phone = forms.CharField(max_length=20, label='Phone Number', widget=forms.TextInput(attrs=PHONE_WIDGET_ATTRS))
+    billing_email = forms.EmailField(label='Email Address', widget=forms.EmailInput(attrs=GMAIL_WIDGET_ATTRS))
     billing_address_line_1 = forms.CharField(max_length=200, label='Address Line 1')
     billing_address_line_2 = forms.CharField(max_length=200, required=False, label='Address Line 2 (Optional)')
     billing_city = forms.CharField(max_length=100, label='City')
@@ -142,6 +167,12 @@ class CheckoutForm(forms.Form):
                     if value:
                         self.fields[field].initial = value
 
+    def clean_billing_email(self):
+        return validate_gmail(self.cleaned_data.get('billing_email', ''))
+
+    def clean_billing_phone(self):
+        return validate_nepali_mobile(self.cleaned_data.get('billing_phone', ''))
+
 
 class NewsletterForm(forms.ModelForm):
     class Meta:
@@ -152,7 +183,7 @@ class NewsletterForm(forms.ModelForm):
         }
 
     def clean_email(self):
-        email = self.cleaned_data.get('email', '').strip().lower()
+        email = validate_gmail(self.cleaned_data.get('email', ''))
         if NewsletterSubscriber.objects.filter(email=email, is_active=True).exists():
             raise ValidationError("This email is already subscribed.")
         return email
@@ -163,9 +194,13 @@ class ContactForm(forms.ModelForm):
         model = ContactMessage
         fields = ['name', 'email', 'subject', 'message']
         widgets = {
+            'email': forms.EmailInput(attrs=GMAIL_WIDGET_ATTRS),
             'message': forms.Textarea(attrs={'rows': 5, 'placeholder': 'Your message...'}),
             'subject': forms.TextInput(attrs={'placeholder': 'Subject'}),
         }
+
+    def clean_email(self):
+        return validate_gmail(self.cleaned_data.get('email', ''))
 
 
 class ProductSearchForm(forms.Form):
