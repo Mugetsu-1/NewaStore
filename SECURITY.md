@@ -49,7 +49,7 @@ Status legend: **✅ Implemented** · **🟡 Partial** · **⛔ Gap** (see §B).
 | 12 | Payment integrity | Server-side verification of the eSewa callback: HMAC-SHA256 signature check over the returned fields + status + amount, with idempotent fulfillment via `mark_order_paid`. Nay Bank Transfer is settled manually by an admin after verifying the deposit | ✅ | `store/payments.py` (`verify_esewa_signature`); `esewa_verify` in `store/views.py` |
 | 13 | Rate limiting / DoS | DRF throttling: anonymous **120/min**, contact endpoint **5/min** | 🟡 | `REST_FRAMEWORK` throttle config in `newastore/settings.py`; HTML login unthrottled — see §B |
 | 14 | Error handling / info disclosure | `DEBUG` defaults to **False**; custom 404/500 pages; startup config guard prevents booting insecurely in prod | ✅ | `DEBUG` default + `SECRET_KEY` guard in `newastore/settings.py`; `newastore/urls.py` handlers |
-| 15 | Input validation | Django forms + model validation on all mutations; DRF serializers on the JSON API; user image uploads use `ImageField` (Pillow-validated) | 🟡 | `store/forms.py`, `store/models.py`; upload size/MIME allowlist — see §B |
+| 15 | Input validation | Django forms + model validation on all mutations, including Gmail-only email and Nepali mobile-number format validators shared across sign-up, profile, checkout, contact and newsletter; DRF serializers on the JSON API; user image uploads use `ImageField` (Pillow-validated) | 🟡 | `store/validators.py`, `store/forms.py`, `store/models.py`; upload size/MIME allowlist — see §B |
 | 16 | Dependency management | Version-floored, actively maintained packages | 🟡 | `requirements.txt`; no automated CVE scanning — see §B |
 | 17 | Audit trail | Immutable order line items; `OrderStatusHistory` records every status change; failed email sends are logged, not silently dropped | 🟡 | `Order`/`OrderStatusHistory` in `store/models.py`; `store/utils.py`; no auth-failure/security event log — see §B |
 
@@ -82,8 +82,8 @@ coursework build. Each should be revisited before a real production launch.
 ## C. Manual test matrix (T1–T12)
 
 Run against a development/staging database only. Many rows have **automated
-coverage** in `store/tests.py` (62 tests) and `verify_all.py` (68 end-to-end
-checks); those are noted per row. Rows without automated coverage rely on the
+coverage** in `store/tests.py` (73 tests) and `verify_all.py` (end-to-end
+route/checkout/admin/config checks); those are noted per row. Rows without automated coverage rely on the
 named framework control and should be spot-checked manually.
 
 | ID | Scenario | Steps | Expected result | Automated coverage |
