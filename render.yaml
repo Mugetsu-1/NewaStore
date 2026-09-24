@@ -3,7 +3,7 @@ services:
     name: newastore
     runtime: python
     plan: free
-    buildCommand: "pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate && python manage.py ensure_ready --skip-import --skip-repair --skip-materialize --skip-audit && (timeout 420 python manage.py classify_catalog || true) && (python manage.py rank_catalog --skip-fetch || true)"
+    buildCommand: "pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate && python manage.py ensure_ready --skip-import --skip-repair --skip-materialize --skip-audit && (timeout 420 python manage.py classify_catalog || true) && (timeout 600 python manage.py rank_catalog || true)"
     startCommand: "gunicorn newastore.wsgi:application --bind 0.0.0.0:$PORT"
     envVars:
       - key: DATABASE_URL
