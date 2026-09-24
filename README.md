@@ -12,7 +12,7 @@ customized admin dashboard, and a test suite.
 > Review the production checklist and replace every development credential
 > before deploying it publicly.
 
-## Contents:
+## Contents
 
 - [Features](#features)
 - [Quick Start](#quick-start)
@@ -45,6 +45,7 @@ not retried on every startup.
 ## Features
 
 ### Storefront
+
 - **Home page** — Steam/Epic-style hero carousel with real game art, genre browse chips, featured & recommended, special deals, new releases, best sellers
 - **Shop / catalog** — sidebar filters (genre, price, deals, search), sorting, pagination
 - **Category & tag/genre pages**
@@ -60,6 +61,7 @@ not retried on every startup.
 - **Static pages** — About, Contact, FAQ, Privacy, Terms, Refund Policy
 
 ### Cart & Checkout
+
 - Persistent cart that works for **guests (session)** and **logged-in users**, merged on login
 - Quantity updates, cart drawer
 - **Coupons** — percentage and fixed-amount types with usage limits
@@ -70,6 +72,7 @@ not retried on every startup.
 - Order confirmation + status emails
 
 ### Orders
+
 - Order history with status filter
 - Order detail with status timeline
 - **PDF invoice** download (ReportLab with HTML fallback)
@@ -77,18 +80,21 @@ not retried on every startup.
 - Admin bulk status actions and status history audit trail
 
 ### Accounts
+
 - Registration, login (username **or** email), logout
 - Password reset flow
 - Dashboard with order/wishlist stats
 - Profile editing, password change
 
 ### Admin (Jazzmin)
+
 - Rich, dark-themed dashboard
 - Full CRUD for products, categories, tags, orders, coupons, reviews, settings
 - Inline product images & variants
 - Bulk order status actions, review moderation, subscriber management
 
 ### Platform
+
 - SEO: meta tags, Open Graph, `sitemap.xml`, `robots.txt`
 - Custom 404 / 500 pages, maintenance mode
 - Newsletter subscriptions, contact messages
@@ -154,7 +160,7 @@ python manage.py materialize_images --workers 16
 The `.env` file is intentionally gitignored. Start from `.env.example` and
 never commit real passwords, API keys, SMTP app passwords, or payment secrets:
 
-```
+```text
 DB_NAME=newastore
 DB_USER=newastore
 DB_PASSWORD=...
@@ -204,7 +210,7 @@ python verify_all.py                           # end-to-end health check against
 
 ## Project structure
 
-```
+```text
 newastore/
 ├── manage.py
 ├── dump_status.py             # print database and catalog status
@@ -272,7 +278,7 @@ By default Django prints emails to the console. To send real emails:
 2. Generate an App Password at <https://myaccount.google.com/apppasswords> (app type *Mail*) - the 16-char code keeps its spaces.
 3. Put it in `.env` (see `.env.example`), then verify end-to-end:
 
-    python manage.py send_test_email --to you@gmail.com
+    python manage.py send_test_email --to <you@gmail.com>
 
 Transactional flows that use it: welcome (on signup), password reset, order confirmation, payment receipt, order status, and admin contact notifications. Failed sends are logged instead of silently dropped. An admin action on Site Settings (Send test email) sends a verification email too.
 

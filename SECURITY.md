@@ -14,7 +14,7 @@ the posture can be assessed accurately before any production deployment.
 
 ## Reporting a vulnerability
 
-Report suspected vulnerabilities privately to **newastore8@gmail.com**. Please
+Report suspected vulnerabilities privately to **<newastore8@gmail.com>**. Please
 include reproduction steps and affected endpoints. Do not open a public issue
 for an unpatched vulnerability. As a coursework/portfolio project there is no
 formal SLA, but reports are triaged on a best-effort basis.
