@@ -81,6 +81,7 @@ not retried on every startup.
 ### Accounts
 
 - Registration, login (username **or** email), logout
+- **Validated sign-up & profile** — email must be a real **Gmail** address (`@gmail.com`); phone must be a **Nepali mobile** number (NTC / Ncell / Smart Cell: 10 digits starting `98`, `97` or `96`, with an optional `+977` country code); passwords use Django's standard strength validators. The same Gmail/Nepali-mobile rules apply at checkout, contact and newsletter sign-up, shown as inline field hints with live popups client-side and enforced server-side.
 - Password reset flow
 - Dashboard with order/wishlist stats
 - Profile editing, password change

@@ -471,4 +471,43 @@
     btn.classList.add('is-pressed');
     window.setTimeout(() => btn.classList.remove('is-pressed'), 400);
   });
+
+  const GMAIL_RE = /^[^\s@]+@gmail\.com$/i;
+  const NEPALI_RE = /^(?:\+?977)?9[678]\d{8}$/;
+  const GMAIL_MSG = 'Only Gmail accounts are accepted — your email must end with @gmail.com.';
+  const PHONE_MSG = 'Only Nepali mobile numbers are accepted — 10 digits starting with 98, 97 or 96.';
+
+  function fieldRule(input) {
+    const rule = input.getAttribute('data-rule');
+    if (rule === 'gmail') return { re: GMAIL_RE, msg: GMAIL_MSG, clean: (v) => v.trim() };
+    if (rule === 'nepali-phone') return { re: NEPALI_RE, msg: PHONE_MSG, clean: (v) => v.replace(/[\s\-()]/g, '') };
+    return null;
+  }
+
+  function checkField(input, toast) {
+    const rule = fieldRule(input);
+    if (!rule) return true;
+    const value = rule.clean(input.value || '');
+    if (value === '') { input.setCustomValidity(''); return true; }
+    const ok = rule.re.test(value);
+    input.setCustomValidity(ok ? '' : rule.msg);
+    if (!ok && toast && window.showToast) window.showToast(rule.msg, 'error');
+    return ok;
+  }
+
+  document.addEventListener('input', (e) => {
+    if (e.target.matches && e.target.matches('[data-rule="gmail"], [data-rule="nepali-phone"]')) checkField(e.target, false);
+  });
+  document.addEventListener('blur', (e) => {
+    const t = e.target;
+    if (!t.matches) return;
+    if (t.matches('[data-rule="gmail"], [data-rule="nepali-phone"]')) {
+      checkField(t, true);
+    } else if (t.matches('[data-rule="gmail-soft"]')) {
+      const v = (t.value || '').trim();
+      if (v.includes('@') && !GMAIL_RE.test(v) && window.showToast) {
+        window.showToast('Accounts use a Gmail address — sign in with your @gmail.com email or your username.', 'info');
+      }
+    }
+  }, true);
 })();

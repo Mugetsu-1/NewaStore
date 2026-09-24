@@ -9,16 +9,16 @@ from .validators import validate_gmail, validate_nepali_mobile
 GMAIL_WIDGET_ATTRS = {
     'type': 'email',
     'placeholder': 'you@gmail.com',
-    'pattern': r'[a-zA-Z0-9._%+\-]+@gmail\.com',
-    'title': 'Enter a Gmail address ending in @gmail.com',
+    'title': 'Only Gmail accounts are accepted — the address must end in @gmail.com',
+    'data-rule': 'gmail',
 }
 PHONE_WIDGET_ATTRS = {
     'type': 'tel',
     'inputmode': 'numeric',
     'placeholder': '9841234567',
-    'pattern': r'(\+?977)?9[678]\d{8}',
-    'title': 'Nepali mobile number: 10 digits starting with 98, 97 or 96',
+    'title': 'Nepali mobile number only: 10 digits starting with 98, 97 or 96',
     'maxlength': '20',
+    'data-rule': 'nepali-phone',
 }
 
 

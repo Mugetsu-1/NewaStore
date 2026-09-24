@@ -28,12 +28,14 @@
                             <label class="form-label">Phone <span class="req">*</span></label>
                             {{ form.billing_phone }}
                             {% if form.billing_phone.errors %}<div class="form-error">{{ form.billing_phone.errors.0 }}</div>{% endif %}
+                            <div class="form-help"><i class="fas fa-circle-info"></i> Nepali mobile numbers only (98, 97 or 96…).</div>
                         </div>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Email <span class="req">*</span></label>
                         {{ form.billing_email }}
                         {% if form.billing_email.errors %}<div class="form-error">{{ form.billing_email.errors.0 }}</div>{% endif %}
+                        <div class="form-help"><i class="fas fa-circle-info"></i> Only Gmail accounts are accepted — your game keys are sent here.</div>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Address Line 1 <span class="req">*</span></label>
