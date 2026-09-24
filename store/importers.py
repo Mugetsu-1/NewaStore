@@ -1,7 +1,6 @@
 """Live import helpers for CheapShark, Steam and SteamSpy data.
 
 Used by:
-    - populate_db.py              (CheapShark enumeration sweep + upserts)
     - manage.py import_steamspy   (full Steam catalog background import)
     - store.views.search          (zero-result live import)
 
@@ -13,7 +12,7 @@ import re
 import time
 import threading
 from datetime import datetime, timezone as dt_timezone
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal
 
 import requests
 import uuid
@@ -41,18 +40,6 @@ SKIP_TITLE_PATTERNS = [
     re.compile(r'\bOST\b', re.I),
     re.compile(r'\bDemo\b(?!n)', re.I),
 ]
-
-CS_STORES = ['1', '2', '3', '7', '11', '13', '15', '21', '23', '25', '27', '28', '30', '35']
-
-PRICE_BANDS = [
-    (0, 1), (1, 2), (2, 3), (3, 5), (5, 7), (7, 10),
-    (10, 15), (15, 20), (20, 30), (30, 50), (50, 60), (60, 100000),
-]
-
-
-def usd_to_npr(usd):
-    npr = (Decimal(usd) * USD_TO_NPR).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
-    return (npr // 10) * 10
 
 
 def tier_for_usd(usd):
@@ -331,28 +318,6 @@ class Api:
 api = Api()
 
 
-def wait_for_cheapshark(max_minutes=45):
-    """Block until CheapShark answers (survives temporary rate-limit bans)."""
-    deadline = time.time() + max_minutes * 60
-    attempt = 0
-    while time.time() < deadline:
-        data = api.get_json(f'{CS_API}/deals', {'pageSize': 1},
-                            min_interval=5, retries=1, ok_429=False)
-        if data == 'RATE_LIMITED':
-            attempt += 1
-            wait = min(60 * attempt, 300)
-            print(f'  CheapShark rate-limiting; waiting {wait}s (attempt {attempt})...')
-            time.sleep(wait)
-            continue
-        if data is not None:
-            if attempt:
-                print('  CheapShark reachable again.')
-            return True
-        time.sleep(15)
-    return False
-
-
-
 def steam_capsule_url(appid):
     return (f'https://shared.fastly.steamstatic.com/store_item_assets/steam/'
             f'apps/{appid}/capsule_616x353.jpg')
@@ -587,59 +552,6 @@ def _deal_to_game(deal):
         'release': parse_ts(deal.get('releaseDate')),
         'thumb': deal.get('thumb') or None,
     }
-
-
-def sweep_deals(max_requests=400, on_progress=None):
-    """Enumerate CheapShark's catalog via band x sort (x store) combos.
-
-    CheapShark's `page` parameter is broken, so partitioning on other axes is
-    the only way to enumerate the full catalog.
-    """
-    combos = []
-    for band in PRICE_BANDS:
-        for sort in ('Title', 'Metacritic', 'Deal Rating', 'Savings', 'Release'):
-            combos.append({'lowerPrice': band[0], 'upperPrice': band[1], 'sortBy': sort})
-    for band in PRICE_BANDS[:6]:
-        for store in CS_STORES:
-            combos.append({'lowerPrice': band[0], 'upperPrice': band[1],
-                           'sortBy': 'Deal Rating', 'storeID': store})
-
-    games = {}
-    seen_keys = set()
-    requests_used = 0
-    consecutive_failures = 0
-
-    for params in combos:
-        if requests_used >= max_requests:
-            break
-        params = {**params, 'pageSize': 60}
-        data = api.get_json(f'{CS_API}/deals', params)
-        requests_used += 1
-        if not isinstance(data, list):
-            consecutive_failures += 1
-            if consecutive_failures >= 3:
-                print('  sweep: API unavailable — waiting for CheapShark to recover...')
-                wait_for_cheapshark()
-                consecutive_failures = 0
-            continue
-        consecutive_failures = 0
-        added = 0
-        for deal in data:
-            game = _deal_to_game(deal)
-            if not game['name']:
-                continue
-            key = f"appid:{game['appid']}" if game['appid'] else normalize_title(game['name'])
-            if not key or key in seen_keys:
-                continue
-            if not game['price_usd'] or game['price_usd'] <= 0:
-                continue
-            seen_keys.add(key)
-            games[key] = game
-            added += 1
-        if on_progress:
-            on_progress(requests_used, len(games), added)
-
-    return list(games.values())
 
 
 def cheapshark_game_deals(game_id):

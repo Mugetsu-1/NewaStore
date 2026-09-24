@@ -7,7 +7,6 @@ from django.core.mail import send_mail
 from django.db.models import Sum
 from django.http import HttpResponse
 from django.utils.html import format_html
-from django.urls import reverse
 from django.utils.safestring import mark_safe
 from .models import (
     Category, Tag, Product, ProductImage, ProductVariant, Review, ReviewImage,
@@ -132,7 +131,6 @@ class ProductAdmin(admin.ModelAdmin):
     image_thumbnail.short_description = 'Image'
 
     def is_in_stock(self, obj):
-        from django.utils.safestring import mark_safe
         if obj.is_in_stock:
             return mark_safe('<span style="color: green;">✓ In Stock</span>')
         return mark_safe('<span style="color: red;">✗ Out of Stock</span>')

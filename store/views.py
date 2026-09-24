@@ -4,19 +4,17 @@ from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
 from django.contrib import messages
-from django.contrib.auth import login, update_session_auth_hash, get_user_model
+from django.contrib.auth import login, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import PasswordChangeForm
 from django.contrib.auth.views import PasswordResetView, PasswordResetDoneView, PasswordResetConfirmView, PasswordResetCompleteView
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import Q, Avg, Count, F, Sum
+from django.db.models import Q, Count, F
 from django.http import JsonResponse, HttpResponse, Http404
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse_lazy, reverse
-from django.utils import timezone
 from django.views.decorators.http import require_POST
-from django.db.models import Prefetch
 
 from .payments import (
     is_esewa_configured, build_esewa_form, verify_esewa_signature,
@@ -41,9 +39,6 @@ from .utils import (
     build_invoice_pdf, get_client_ip, send_templated_email,
     send_welcome_email, mark_order_paid,
 )
-
-User = get_user_model()
-
 
 
 def home(request):

@@ -176,27 +176,6 @@ def fetch_thumbnail(external_url, appid=None, timeout=15):
     raise last_err
 
 
-def materialize_row(img_row, appid=None, timeout=15):
-    """Fetch-once for one ProductImage (single-row / DB-attached convenience).
-
-    Wraps :func:`fetch_thumbnail` and persists on the calling thread: stores the
-    WebP and, when a fallback URL won, rewrites ``external_url`` so the detail
-    page and admin (which read the full-size source) recover too. Returns True
-    when a thumbnail was made. The batch command does not use this - it keeps
-    all DB writes on the main thread; see ``materialize_images``.
-    """
-    result = fetch_thumbnail(img_row.external_url, appid=appid, timeout=timeout)
-    if result is None:
-        return False
-    webp, url = result
-    save_thumbnail(img_row, webp)
-    if url != img_row.external_url:
-        img_row.external_url = url
-        img_row.save(update_fields=["external_url"])
-    return True
-
-
-
 def steam_header_image(appid):
     """Native artwork URL straight from Steam's appdetails API (rate-limited).
 
@@ -229,49 +208,3 @@ def steam_header_image(appid):
         if url:
             return url
     raise ArtworkUnavailable("no image fields in appdetails payload")
-
-
-def cheapshark_search_thumb(name):
-    """CheapShark title search -> deal thumbnail (no credentials needed)."""
-    try:
-        r = requests.get("https://www.cheapshark.com/api/1.0/games",
-                         params={"title": name, "limit": 3},
-                         headers={"User-Agent": "NewaStore/1.0 (portfolio demo)"},
-                         timeout=15)
-    except requests.RequestException as exc:
-        raise ArtworkError(f"{type(exc).__name__}: {exc}") from exc
-    if r.status_code != 200:
-        raise ArtworkError(f"HTTP {r.status_code}")
-    games = r.json().get("games") or []
-    if not games:
-        raise ArtworkError("no title match")
-    wanted = name.strip().lower()
-    best = next((g for g in games
-                 if (g.get("name") or "").strip().lower() == wanted), games[0])
-    thumb = best.get("thumb") or ""
-    if not thumb:
-        raise ArtworkError("match has no thumb")
-    return thumb
-
-
-def igdb_cover_url(name, client_id, client_secret):
-    """IGDB (Twitch) cover art. Requires TWITCH_CLIENT_ID / TWITCH_CLIENT_SECRET."""
-    if not client_id or not client_secret:
-        raise ArtworkError("IGDB not configured (TWITCH_CLIENT_ID/SECRET missing)")
-    auth = requests.post("https://id.twitch.tv/oauth2/token", params={
-        "client_id": client_id, "client_secret": client_secret,
-        "grant_type": "client_credentials",
-    }, timeout=15)
-    token = auth.json().get("access_token")
-    if not token:
-        raise ArtworkError("twitch oauth failed")
-    resp = requests.post(
-        "https://api.igdb.com/v4/covers",
-        data='fields image_id; search "{}"; limit 1;'.format(name.replace('"', "")),
-        headers={"Client-ID": client_id, "Authorization": f"Bearer {token}"},
-        timeout=15)
-    covers = resp.json() if resp.status_code == 200 else []
-    if not covers or not covers[0].get("image_id"):
-        raise ArtworkError("no IGDB cover")
-    image_id = covers[0]["image_id"]
-    return f"https://images.igdb.com/igdb/image/upload/t_cover_big/{image_id}.jpg"

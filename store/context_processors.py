@@ -1,7 +1,7 @@
 from django.core.cache import cache
 from django.db.models import Count, Q
 
-from .models import SiteSettings, Category, Tag, Cart
+from .models import SiteSettings, Category, Tag
 from .cart import CartManager
 
 GENRE_CACHE_KEY = 'nav_genres_v1'

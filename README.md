@@ -33,8 +33,7 @@ customized admin dashboard, and a test suite.
 | **Steam appdetails** (no key) | Genres, real descriptions, developers, publishers, release dates, HD screenshots | Seeder enrichment (featured games) |
 | **SteamSpy** (no key) | The full Steam catalog (~80k titles): names, prices in cents, developers, genres, and owner estimates (popularity) | `import_steamspy`, `classify_catalog`, `rank_catalog` |
 
-CheapShark's `page` parameter is broken, so the importer enumerates the
-catalog by **price band x sort x store** combos instead of paging. Artwork is
+Artwork is
 initially sourced from the Steam CDN, then materialized as local WebP files
 under `MEDIA_ROOT` so storefront pages do not depend on third-party image
 requests. Rows confirmed to have no artwork are marked unavailable and are
@@ -218,7 +217,6 @@ python verify_all.py                           # end-to-end health check against
 ```text
 newastore/
 ├── manage.py
-├── dump_status.py             # print database and catalog status
 ├── test_checkout.py          # checkout-flow verification script
 ├── verify_all.py             # end-to-end route, checkout, admin, and configuration checks
 ├── verify_images.py          # inspect stored product artwork
@@ -316,8 +314,6 @@ Key settings can be overridden via environment variables:
 | `ESEWA_PRODUCT_CODE`, `ESEWA_SECRET_KEY`, `ESEWA_FORM_URL`, `ESEWA_STATUS_URL` | eSewa ePay v2 (defaults to the public RC sandbox) |
 | `SITE_BASE_URL` | Absolute base URL used in transactional emails |
 | `USD_TO_NPR` | USD→NPR rate used by importers (default: 135) |
-| `SEED_MAX_REQUESTS` | Max CheapShark requests in the sweep (default: 400) |
-| `SEED_ENRICH` | Top games to Steam-enrich after the sweep (default: 150) |
 | `ARTWORK_THUMB_WIDTH` | Width of generated local WebP thumbnails (default: 616) |
 | `ARTWORK_WEBP_QUALITY` | WebP quality for generated thumbnails (default: 82) |
 
