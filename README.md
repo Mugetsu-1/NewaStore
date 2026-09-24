@@ -31,7 +31,7 @@ customized admin dashboard, and a test suite.
 |--------|------------------|---------|
 | **CheapShark** (no key) | Active deals across 14 stores: real USD prices, Metacritic scores, Steam ratings, thumbnails | `ensure_ready`/`audit_product_images` + live search import |
 | **Steam appdetails** (no key) | Genres, real descriptions, developers, publishers, release dates, HD screenshots | Seeder enrichment (featured games) |
-| **SteamSpy** (no key) | The full Steam catalog (~60-80k games): names, prices in cents, developers | `manage.py import_steamspy` |
+| **SteamSpy** (no key) | The full Steam catalog (~80k titles): names, prices in cents, developers, genres, and owner estimates (popularity) | `import_steamspy`, `classify_catalog`, `rank_catalog` |
 
 CheapShark's `page` parameter is broken, so the importer enumerates the
 catalog by **price band x sort x store** combos instead of paging. Artwork is
@@ -100,6 +100,7 @@ not retried on every startup.
 - Newsletter subscriptions, contact messages
 - Signals to auto-create wishlists, track order status changes
 - Optional Google Analytics 4 tracking configured from Site Settings
+- **Catalog curation** — imported Steam rows are classified as **games** or desktop **applications**; non-games are moved into an *Applications* category and kept out of the games storefront (home, shop, genres) while still being directly browsable. Prominence tiers (AAA / AA / Indie / Free) and the featured homepage are computed from real SteamSpy **owner counts** plus a curated blockbuster list — never from price
 - Byte-compiled-ready, environment-variable configuration
 - Automated health checks and checkout verification scripts
 
@@ -201,8 +202,12 @@ python manage.py import_steamspy --pages 5     # import 5 pages then stop
 python manage.py repair_missing_images         # fill in placeholder artwork
 python manage.py materialize_images            # download and store local WebP thumbnails
 python manage.py audit_product_images          # probe stored URLs for dead links
-python manage.py reprice_catalog --dry-run     # preview tiered NPR catalog pricing
-python manage.py reprice_catalog               # apply tiered pricing and feature top AAA titles
+python manage.py reprice_catalog --dry-run     # preview clean tiered NPR pricing (price only)
+python manage.py reprice_catalog               # apply clean tiered NPR pricing (price only)
+python manage.py classify_catalog --dry-run    # preview which imported rows are apps, not games
+python manage.py classify_catalog              # move non-game software into the "Applications" category
+python manage.py rank_catalog --dry-run        # preview popularity tiers (SteamSpy owners + curated AAA)
+python manage.py rank_catalog                  # tier by real popularity and feature the top games
 python verify_all.py                           # end-to-end health check against the configured database
 ```
 
@@ -258,7 +263,7 @@ newastore/
 | Model | Purpose |
 |-------|---------|
 | `Category`, `Tag` | Product organization (nested categories) |
-| `Product`, `ProductImage`, `ProductVariant` | Catalog with gallery, variants, inventory |
+| `Product`, `ProductImage`, `ProductVariant` | Catalog with gallery, variants, inventory; `product_type` splits games from applications, and `tier`/`owners` drive popularity ranking |
 | `Review`, `ReviewImage` | Ratings & product reviews |
 | `Cart`, `CartItem` | Session/user cart |
 | `Wishlist`, `WishlistItem` | Saved products |

@@ -122,6 +122,133 @@ def is_game(title):
     return not any(p.search(title or '') for p in SKIP_TITLE_PATTERNS)
 
 
+SOFTWARE_GENRES = [
+    'Animation & Modeling', 'Audio Production', 'Design & Illustration',
+    'Photo Editing', 'Software Training', 'Utilities', 'Video Production',
+    'Web Publishing', 'Game Development', 'Education', 'Accounting',
+]
+
+STEAM_APPLICATION_TYPES = {
+    'software', 'video', 'music', 'audio', 'media', 'tool', 'hardware',
+    'application', 'series', 'episode',
+}
+
+_APP_BRAND_PATTERNS = [
+    r'PowerDirector', r'PhotoDirector', r'AudioDirector', r'ColorDirector',
+    r'Director Suite', r'CyberLink', r'Wondershare', r'Filmora', r'Movavi',
+    r'VEGAS Pro', r'Movie Studio', r'ACID Pro', r'SOUND FORGE',
+    r'Wallpaper Engine', r'FL Studio', r'Ableton Live', r'VirtualDJ', r'Serato',
+    r'Voicemod', r'Aseprite', r'Substance 3D', r'Substance Painter',
+    r'Substance Designer', r'ZBrush', r'Cinema 4D', r'3ds Max', r'Autodesk Maya',
+    r'Clip Studio Paint', r'MediBang', r'Manga Studio',
+    r'RPG Maker', r'GameMaker Studio', r'Game Maker Studio', r'Visual Novel Maker',
+    r'Character Creator \d', r'iClone', r'Cartoon Animator',
+    r'Screen Recorder', r'Video Converter', r'Data Recovery', r'Driver Booster',
+    r'\bAntivirus\b', r'3DMark', r'PCMark', r'MotionBuilder', r'SpeedTree',
+    r'Streamlabs', r'XSplit', r'DAZ Studio',
+]
+_APP_KEYWORDS = re.compile('|'.join(_APP_BRAND_PATTERNS), re.I)
+
+
+def looks_like_application(name):
+    """Heuristic: does this title name a piece of software rather than a game?
+
+    Matches only unmistakable software brand names (CyberLink PowerDirector,
+    FL Studio, Wallpaper Engine, RPG Maker, ...) that essentially never appear
+    in real game titles, so false positives against games are near zero. Used
+    as a secondary signal by ``classify_catalog`` on top of the authoritative
+    SteamSpy software-genre lists.
+    """
+    return bool(_APP_KEYWORDS.search(name or ''))
+
+
+def parse_owners(raw):
+    """SteamSpy ``owners`` bucket string -> midpoint int.
+
+    ``'10,000,000 .. 20,000,000'`` -> ``15000000``; a single value is returned
+    as-is; anything unparseable -> ``0``.
+    """
+    if raw is None:
+        return 0
+    nums = re.findall(r'\d[\d,]*', str(raw))
+    vals = [int(n.replace(',', '')) for n in nums]
+    if not vals:
+        return 0
+    if len(vals) >= 2:
+        return (vals[0] + vals[1]) // 2
+    return vals[0]
+
+
+OWNERS_AAA = 5_000_000
+OWNERS_AA = 500_000
+OWNERS_INDIE = 20_000
+
+
+def tier_for_owners(owners, has_price, curated=False):
+    """Prominence tier from real popularity (SteamSpy owners) + a curated list.
+
+    Deliberately NOT derived from price: a free-to-play megahit outranks a
+    pricey obscure title. Curated blockbusters and anything with >=5M owners
+    are AAA; >=500k AA; the priced/known long tail is Indie; only titles that
+    are both free and obscure (no price, negligible owners) fall to the lowest
+    Free tier, so the "Free" badge keeps meaning genuinely free games.
+    """
+    owners = int(owners or 0)
+    if curated or owners >= OWNERS_AAA:
+        return Product.TIER_AAA
+    if owners >= OWNERS_AA:
+        return Product.TIER_AA
+    if has_price or owners >= OWNERS_INDIE:
+        return Product.TIER_INDIE
+    return Product.TIER_FREE
+
+
+CURATED_AAA = {
+    730: 'Counter-Strike 2',
+    570: 'Dota 2',
+    271590: 'Grand Theft Auto V',
+    1245620: 'Elden Ring',
+    1091500: 'Cyberpunk 2077',
+    292030: 'The Witcher 3: Wild Hunt',
+    1174180: 'Red Dead Redemption 2',
+    1086940: "Baldur's Gate 3",
+    578080: 'PUBG: BATTLEGROUNDS',
+    252490: 'Rust',
+    346110: 'ARK: Survival Evolved',
+    105600: 'Terraria',
+    413150: 'Stardew Valley',
+    72850: 'The Elder Scrolls V: Skyrim',
+    489830: 'The Elder Scrolls V: Skyrim Special Edition',
+    377160: 'Fallout 4',
+    238960: 'Path of Exile',
+    230410: 'Warframe',
+    440: 'Team Fortress 2',
+    550: 'Left 4 Dead 2',
+    620: 'Portal 2',
+    4000: "Garry's Mod",
+    1145360: 'Hades',
+    1085660: 'Destiny 2',
+    359550: "Tom Clancy's Rainbow Six Siege",
+    289070: "Sid Meier's Civilization VI",
+    227300: 'Euro Truck Simulator 2',
+    236390: 'War Thunder',
+    218620: 'PAYDAY 2',
+    291550: 'Brawlhalla',
+    553850: 'HELLDIVERS 2',
+    1623730: 'Palworld',
+    588650: 'Dead Cells',
+    275850: "No Man's Sky",
+    322330: "Don't Starve Together",
+    374320: 'Dark Souls III',
+    582010: 'Monster Hunter: World',
+    814380: 'Sekiro: Shadows Die Twice',
+    990080: 'Hogwarts Legacy',
+    1593500: 'God of War',
+    8930: "Sid Meier's Civilization V",
+}
+
+
+
 def parse_ts(ts):
     try:
         ts = int(ts)
@@ -631,6 +758,15 @@ def enrich_with_steam(products, limit=200, delay=0.65):
             continue
         d = payload['data']
 
+        stype = (d.get('type') or '').strip().lower()
+        if stype:
+            p.product_type = (Product.PRODUCT_TYPE_APPLICATION
+                              if stype in STEAM_APPLICATION_TYPES
+                              else Product.PRODUCT_TYPE_GAME)
+        mc = (d.get('metacritic') or {}).get('score')
+        if isinstance(mc, int) and 0 < mc <= 100:
+            p.metacritic_score = mc
+
         genres = [g['description'] for g in d.get('genres', [])]
         short = (d.get('short_description') or '')[:500]
         about = strip_html(d.get('detailed_description') or d.get('about_the_game') or '')
@@ -657,7 +793,7 @@ def enrich_with_steam(products, limit=200, delay=0.65):
             p.published_at = released
         p.steam_enriched = True
         p.save(update_fields=['description', 'short_description', 'published_at',
-                              'steam_enriched'])
+                              'steam_enriched', 'product_type', 'metacritic_score'])
 
         through = Product.tags.through
         pairs = []
@@ -711,10 +847,29 @@ def steamspy_to_game(app):
     }
 
 
-def steamspy_genre_apps(genre):
-    """Top ~1000 apps in a SteamSpy genre. Returns {appid: name}."""
+def steamspy_genre_rows(genre):
+    """Every app SteamSpy lists under a genre, with its full data row.
+
+    Returns ``{int(appid): {...}}`` where each value is SteamSpy's per-app dict
+    (``name``, ``owners``, ``positive``, ...). Used both to tag games by genre
+    and to pull real ``owners`` popularity for ranking, and to enumerate the
+    non-game software genres for classification — all from the same endpoint.
+    """
     data = api.get_json(STEAMSPY_API, {'request': 'genre', 'genre': genre},
                         min_interval=16, retries=3)
     if not isinstance(data, dict):
         return {}
-    return {int(appid): a.get('name', '') for appid, a in data.items()}
+    rows = {}
+    for appid, row in data.items():
+        try:
+            rows[int(appid)] = row if isinstance(row, dict) else {}
+        except (TypeError, ValueError):
+            continue
+    return rows
+
+
+def steamspy_genre_apps(genre):
+    """Top ~1000 apps in a SteamSpy genre. Returns {appid: name}."""
+    return {appid: row.get('name', '')
+            for appid, row in steamspy_genre_rows(genre).items()}
+

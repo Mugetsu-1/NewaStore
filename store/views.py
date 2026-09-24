@@ -47,7 +47,7 @@ User = get_user_model()
 
 
 def home(request):
-    products = Product.objects.filter(is_active=True).select_related('category')\
+    products = Product.games.filter(is_active=True).select_related('category')\
         .prefetch_related('images', 'tags')
     featured = products.filter(is_featured=True)[:8]
 
@@ -76,12 +76,16 @@ def home(request):
     best_sellers = products.annotate(order_count=Count('order_items'))\
         .filter(order_count__gt=0).order_by('-order_count')[:8]
     genres = Tag.objects.annotate(
-        product_count=Count('products', filter=Q(products__is_active=True))
+        product_count=Count('products', filter=Q(
+            products__is_active=True,
+            products__product_type=Product.PRODUCT_TYPE_GAME))
     ).filter(product_count__gt=0).order_by('-product_count')[:12]
 
     hero_covers = [
         img.card_image_url
-        for img in (ProductImage.objects.filter(product__is_active=True)
+        for img in (ProductImage.objects.filter(
+                        product__is_active=True,
+                        product__product_type=Product.PRODUCT_TYPE_GAME)
                     .exclude(thumbnail='').only('thumbnail', 'image')
                     .order_by('-id')[:24])
         if img.card_image_url
@@ -90,7 +94,7 @@ def home(request):
     hero_stats = {
         'games': f"{products.count():,}",
         'deals': f"{products.filter(discount_price__isnull=False).count():,}",
-        'genres': f"{Tag.objects.filter(products__is_active=True).distinct().count():,}",
+        'genres': f"{Tag.objects.filter(products__is_active=True, products__product_type=Product.PRODUCT_TYPE_GAME).distinct().count():,}",
     }
 
     context = {
@@ -112,6 +116,13 @@ def product_list(request):
     products = Product.objects.filter(is_active=True).select_related('category')\
         .prefetch_related('images', 'tags')
     form = ProductSearchForm(request.GET)
+
+    # The default shop listing showcases games; an explicit category (e.g.
+    # Applications), tag or search query may surface non-game products.
+    has_scope = bool(request.GET.get('category') or request.GET.get('tag')
+                     or (request.GET.get('q') or '').strip())
+    if not has_scope:
+        products = products.filter(product_type=Product.PRODUCT_TYPE_GAME)
 
     category_slug = request.GET.get('category')
     if category_slug:
@@ -160,14 +171,14 @@ def product_list(request):
 
     sort_by = request.GET.get('sort_by') or 'featured'
     sort_map = {
-        'featured': ('-tier', '-is_featured', '-created_at'),
+        'featured': ('-is_featured', '-tier', '-owners', '-created_at'),
         '-created_at': ('-created_at',),
         'newest': ('-tier', F('published_at').desc(nulls_last=True)),
         'name': ('name',),
         '-name': ('-name',),
         'price': ('price',),
         '-price': ('-price',),
-        '-is_featured': ('-is_featured', '-tier', '-created_at'),
+        '-is_featured': ('-is_featured', '-tier', '-owners', '-created_at'),
     }
     products = products.order_by(*sort_map.get(sort_by, sort_map['featured']))
 
@@ -175,7 +186,9 @@ def product_list(request):
     page_obj = paginator.get_page(request.GET.get('page'))
 
     genres = Tag.objects.annotate(
-        product_count=Count('products', filter=Q(products__is_active=True))
+        product_count=Count('products', filter=Q(
+            products__is_active=True,
+            products__product_type=Product.PRODUCT_TYPE_GAME))
     ).filter(product_count__gt=0).order_by('name')
 
     context = {
@@ -204,7 +217,7 @@ def category_detail(request, slug):
 
     sort_by = request.GET.get('sort_by') or 'featured'
     cat_sorts = {
-        'featured': ('-tier', '-is_featured', '-created_at'),
+        'featured': ('-is_featured', '-tier', '-owners', '-created_at'),
         '-created_at': ('-created_at',),
         'name': ('name',),
         '-name': ('-name',),

@@ -111,7 +111,7 @@ def recommend_for_product(product, limit=DEFAULT_LIMIT):
     base_tag_names = set(product.tags.values_list("name", flat=True))
 
     pool = (
-        Product.objects.filter(is_active=True)
+        Product.objects.filter(is_active=True, product_type=product.product_type)
         .exclude(pk=product.pk)
         .filter(Q(category_id=product.category_id) | Q(tags__in=base_tag_ids))
         .annotate(_shared=Count("tags", filter=Q(tags__in=base_tag_ids), distinct=True))
@@ -140,7 +140,7 @@ def recommend_for_product(product, limit=DEFAULT_LIMIT):
     ranking = [(pk, reason, s) for s, pk, reason in scored[:limit]]
 
     if not ranking:
-        fb = (Product.objects.filter(is_active=True)
+        fb = (Product.objects.filter(is_active=True, product_type=product.product_type)
               .exclude(pk=product.pk)
               .order_by("-is_featured", "-metacritic_score", "-created_at")
               .values_list("pk", flat=True)[:limit])

@@ -112,13 +112,18 @@ def _filtered_products(params):
         .prefetch_related('images', 'tags')
 
     category_slug = params.get('category')
+    tag_slug = params.get('tag')
+    q = params.get('q')
+
+    # Default browse is games-only; an explicit category/tag/query may reach apps.
+    if not (category_slug or tag_slug or (q or '').strip()):
+        products = products.filter(product_type=Product.PRODUCT_TYPE_GAME)
+
     if category_slug:
         products = products.filter(category__slug=category_slug)
-    tag_slug = params.get('tag')
     if tag_slug:
         products = products.filter(tags__slug=tag_slug)
 
-    q = params.get('q')
     if q:
         products = products.filter(
             Q(name__icontains=q) |
@@ -182,7 +187,9 @@ def game_detail(request, slug):
 @api_view(['GET'])
 def genres(request):
     qs = (Tag.objects
-          .annotate(product_count=Count('products', filter=Q(products__is_active=True)))
+          .annotate(product_count=Count('products', filter=Q(
+              products__is_active=True,
+              products__product_type=Product.PRODUCT_TYPE_GAME)))
           .filter(product_count__gt=0)
           .order_by('-product_count')[:50])
     return Response(GenreSerializer(qs, many=True).data)

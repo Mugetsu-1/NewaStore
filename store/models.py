@@ -50,7 +50,30 @@ class Tag(models.Model):
         super().save(*args, **kwargs)
 
 
+class GameManager(models.Manager):
+    """Catalogue products that are games (excludes the Applications category).
+
+    Exposed as ``Product.games`` for storefront discovery surfaces (home,
+    default shop listing, recommendations) so software/utility titles imported
+    from Steam never pollute the games catalogue. The default ``Product.objects``
+    manager is declared first and still returns every product, so admin,
+    migrations and direct-access views (product detail, category pages) are
+    unaffected.
+    """
+
+    def get_queryset(self):
+        return super().get_queryset().filter(
+            product_type=self.model.PRODUCT_TYPE_GAME)
+
+
 class Product(models.Model):
+    PRODUCT_TYPE_GAME = 'game'
+    PRODUCT_TYPE_APPLICATION = 'application'
+    PRODUCT_TYPE_CHOICES = [
+        (PRODUCT_TYPE_GAME, 'Game'),
+        (PRODUCT_TYPE_APPLICATION, 'Application'),
+    ]
+
     name = models.CharField(max_length=200)
     slug = models.SlugField(max_length=220, unique=True, blank=True)
     description = models.TextField()
@@ -75,6 +98,12 @@ class Product(models.Model):
     ]
     data_source = models.CharField(max_length=20, choices=DATA_SOURCES, default='manual')
     steam_enriched = models.BooleanField(default=False, help_text="Genres/description fetched from Steam")
+    product_type = models.CharField(
+        max_length=20, choices=PRODUCT_TYPE_CHOICES, default=PRODUCT_TYPE_GAME,
+        db_index=True,
+        help_text="Whether this listing is a game or a non-game application "
+                  "(software/utility). Set by the classify_catalog command.",
+    )
 
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, related_name='products')
     tags = models.ManyToManyField(Tag, blank=True, related_name='products')
@@ -92,6 +121,11 @@ class Product(models.Model):
         default=TIER_INDIE, choices=TIER_CHOICES, db_index=True,
         help_text="Production tier — drives homepage prominence and default ordering",
     )
+    owners = models.PositiveBigIntegerField(
+        default=0, db_index=True,
+        help_text="Estimated owner count (SteamSpy midpoint) — real popularity "
+                  "signal behind AAA/AA ranking. Set by the rank_catalog command.",
+    )
     is_digital = models.BooleanField(default=False)
     
     stock_quantity = models.PositiveIntegerField(default=0)
@@ -107,6 +141,9 @@ class Product(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     published_at = models.DateTimeField(null=True, blank=True)
 
+    objects = models.Manager()
+    games = GameManager()
+
     class Meta:
         ordering = ['-created_at']
         indexes = [
@@ -116,6 +153,8 @@ class Product(models.Model):
             models.Index(fields=['slug']),
             models.Index(fields=['is_active', 'created_at']),
             models.Index(fields=['data_source']),
+            models.Index(fields=['is_active', 'product_type']),
+            models.Index(fields=['product_type', 'owners']),
         ]
 
     def __str__(self):
