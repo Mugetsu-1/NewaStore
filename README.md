@@ -1,4 +1,4 @@
-# Newa Store — Full E-Commerce Platform
+# NewaStore — Full E-Commerce Platform
 
 A complete e-commerce web application built with **Django + PostgreSQL**. The
 catalog is seeded with **real game data** (titles, prices, ratings, release
@@ -67,7 +67,7 @@ not retried on every startup.
 - **Guest checkout** and account checkout
 - Billing details collected at checkout and stored on the order for invoices
 - Automatic **tax calculation**
-- Payment methods: **eSewa and Nay Bank Transfer**. eSewa (ePay v2) uses its **real sandbox API** with server-side HMAC-SHA256 signature verification; Nay Bank is an offline bank transfer settled manually. No real money moves in sandbox mode.
+- Payment methods: **eSewa and Nay Bank Transfer**. By default eSewa runs in **sandbox** mode (`ESEWA_SIMULATE`, auto-on for the public `EPAYTEST` code): choosing eSewa opens an **in-site gateway page** that either completes the order (it then appears under **My Orders**) or takes you back to the store — no off-site redirect and no real money. With **live** credentials (or `ESEWA_SIMULATE=False`) it uses the official eSewa ePay v2 flow with server-side HMAC-SHA256 callback verification. Nay Bank is an offline bank transfer settled manually.
 - Order confirmation + status emails
 
 ### Orders
@@ -295,8 +295,8 @@ Transactional flows that use it: welcome (on signup), password reset, order conf
   place them in source control.
 - Restrict `DJANGO_ALLOWED_HOSTS` and configure `SITE_BASE_URL` to the HTTPS
   hostname used by the deployment.
-- Swap eSewa's RC sandbox product code/secret/URLs for live values before
-  accepting real payments.
+- Swap eSewa's RC sandbox product code/secret/URLs for live values and set
+  `ESEWA_SIMULATE=False` before accepting real payments.
 - Run migrations and `collectstatic` as part of deployment; do not use the
   development server in production.
 
@@ -313,6 +313,7 @@ Key settings can be overridden via environment variables:
 | `DJANGO_EMAIL_BACKEND` | Email backend (defaults to console) |
 | `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD` | SMTP |
 | `ESEWA_PRODUCT_CODE`, `ESEWA_SECRET_KEY`, `ESEWA_FORM_URL`, `ESEWA_STATUS_URL` | eSewa ePay v2 (defaults to the public RC sandbox) |
+| `ESEWA_SIMULATE` | `auto` (default): in-site sandbox gateway when the product code is `EPAYTEST`, real eSewa flow otherwise. Force with `True`/`False` |
 | `SITE_BASE_URL` | Absolute base URL used in transactional emails |
 | `USD_TO_NPR` | USD→NPR rate used by importers (default: 135) |
 | `ARTWORK_THUMB_WIDTH` | Width of generated local WebP thumbnails (default: 616) |
@@ -336,9 +337,10 @@ third-party analytics script is loaded when the field is blank.
 1. Set `DJANGO_DEBUG=False` and a strong `DJANGO_SECRET_KEY`.
 2. Configure `DJANGO_ALLOWED_HOSTS` (PostgreSQL is already the default database).
 3. Configure SMTP email credentials.
-4. Configure the live eSewa product code + secret and swap the RC sandbox URLs
-   (`ESEWA_FORM_URL`, `ESEWA_STATUS_URL`) for production, then update the Nay Bank
-   account details in `store/payments.py` (`BANK_TRANSFER_DETAILS`).
+4. Configure the live eSewa product code + secret, swap the RC sandbox URLs
+   (`ESEWA_FORM_URL`, `ESEWA_STATUS_URL`) for production and set
+   `ESEWA_SIMULATE=False`, then update the Nay Bank account details in
+   `store/payments.py` (`BANK_TRANSFER_DETAILS`).
 5. Add WhiteNoise (already in `requirements.txt`) or a reverse proxy for static/media.
 6. Run `python manage.py collectstatic`.
 7. Serve behind HTTPS (security settings auto-enable when `DEBUG=False`).

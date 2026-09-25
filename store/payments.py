@@ -18,7 +18,7 @@ def is_esewa_configured():
 
 BANK_TRANSFER_DETAILS = {
     'bank_name': 'Nay Bank',
-    'account_name': 'Newa Store Pvt. Ltd.',
+    'account_name': 'NewaStore Pvt. Ltd.',
     'account_number': '0123456789012',
     'branch': 'Kathmandu — New Road',
     'swift': 'NAYBNPKA',

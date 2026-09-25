@@ -657,7 +657,7 @@ class ContactMessage(models.Model):
 
 
 class SiteSettings(models.Model):
-    site_name = models.CharField(max_length=100, default='Newa Store')
+    site_name = models.CharField(max_length=100, default='NewaStore')
     site_tagline = models.CharField(max_length=200, blank=True)
     logo = models.ImageField(upload_to='settings/', blank=True, null=True)
     favicon = models.ImageField(upload_to='settings/', blank=True, null=True)

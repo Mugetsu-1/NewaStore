@@ -39,7 +39,16 @@
                         <tbody>
                         {% for order in recent_orders %}
                             <tr>
-                                <td>{{ order.order_number }}</td>
+                                <td>
+                                    {{ order.order_number }}
+                                    {% with items=order.items.all %}
+                                    {% if items %}
+                                    <div class="text-muted" style="font-size:.8rem;margin-top:2px">
+                                        {% for item in items %}{{ item.product_name }}{% if item.quantity > 1 %} × {{ item.quantity }}{% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}
+                                    </div>
+                                    {% endif %}
+                                    {% endwith %}
+                                </td>
                                 <td>{{ order.created_at|date:"M d, Y" }}</td>
                                 <td>{{ currency_symbol }} {{ order.total|floatformat:2 }}</td>
                                 <td>{% order_status_badge order.status %}</td>

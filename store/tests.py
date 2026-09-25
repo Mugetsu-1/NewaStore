@@ -5,7 +5,7 @@ import json
 from io import StringIO
 
 from django.conf import settings
-from django.test import TestCase, Client
+from django.test import TestCase, Client, override_settings
 from django.contrib.auth.models import User
 from django.core import mail
 from django.core.exceptions import ValidationError
@@ -362,7 +362,7 @@ class AuthFlowTests(TestCase):
         user = User.objects.get(username='newgamer')
         self.assertTrue(user.is_authenticated)
         self.assertEqual(len(mail.outbox), 1)
-        self.assertIn('Welcome to Newa Store', mail.outbox[0].subject)
+        self.assertIn('Welcome to NewaStore', mail.outbox[0].subject)
 
     def test_login_by_username_and_by_email(self):
         User.objects.create_user('gamer1', email='gamer1@example.com', password='Secret123!')
@@ -585,12 +585,15 @@ class ApiTests(TestCase):
         response = self.client.post(reverse('api_contact'), {'email': 'not-an-email'})
         self.assertEqual(response.status_code, 400)
         self.assertFalse(response.json()['success'])
+@override_settings(ESEWA_SIMULATE=False)
 class RealGatewayTests(TestCase):
     """eSewa hits its real sandbox API; Nay Bank settles offline.
 
-    Fulfillment is gated on server-side verification: eSewa needs a valid HMAC
-    signature over the returned fields and a matching amount — a forged
-    callback must never mark an order paid.
+    These pin ``ESEWA_SIMULATE=False`` to exercise the live-credential path:
+    the signed auto-submit form and the HMAC-verified ``esewa_verify``
+    callback. Fulfillment is gated on server-side verification — eSewa needs a
+    valid HMAC signature over the returned fields and a matching amount, so a
+    forged callback must never mark an order paid.
     """
 
     def setUp(self):
@@ -720,6 +723,71 @@ class RealGatewayTests(TestCase):
             reverse('order_success', args=[order.order_number])).content.decode()
         self.assertNotIn('Complete your bank transfer', html)
         self.assertNotIn('0123456789012', html)
+
+
+@override_settings(ESEWA_SIMULATE=True)
+class SandboxGatewayTests(TestCase):
+    """The public EPAYTEST sandbox completes eSewa in-site.
+
+    Instead of bouncing off to eSewa's RC host with no way back, the shopper
+    lands on a local gateway page and either pays (order → paid/confirmed) or
+    returns to the store. The paid order then surfaces in their account.
+    """
+
+    def setUp(self):
+        SiteSettings.get_settings()
+        self.product = make_product(name='Halflife 3', stock_quantity=10)
+        self.user = User.objects.create_user(
+            'sandbox_buyer', password='pass12345', email='sb@example.com')
+
+    def _start_checkout(self):
+        self.client.login(username='sandbox_buyer', password='pass12345')
+        self.client.post(reverse('add_to_cart', args=[self.product.id]), {'quantity': 1})
+        return self.client.post(reverse('checkout'), {
+            'billing_full_name': 'Sandbox Buyer', 'billing_phone': '9800000000',
+            'billing_email': 'sb@gmail.com', 'billing_address_line_1': 'Main St',
+            'billing_address_line_2': '', 'billing_city': 'Kathmandu',
+            'billing_state': 'Bagmati', 'billing_postal_code': '44600',
+            'billing_country': 'Nepal', 'payment_method': 'esewa',
+            'order_notes': '', 'terms_accepted': 'on',
+        })
+
+    def test_gateway_page_stays_in_site_and_leaves_order_pending(self):
+        self._start_checkout()
+        order = Order.objects.get()
+        response = self.client.get(reverse('esewa_checkout', args=[order.order_number]))
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode()
+        self.assertNotIn(settings.ESEWA_FORM_URL, html)
+        self.assertIn('Pay with eSewa', html)
+        self.assertIn('Halflife 3', html)
+        self.assertIn(reverse('product_list'), html)
+        order.refresh_from_db()
+        self.assertFalse(order.is_paid)
+
+    def test_paying_confirms_order_and_shows_in_account(self):
+        self._start_checkout()
+        order = Order.objects.get()
+        response = self.client.post(reverse('esewa_checkout', args=[order.order_number]))
+        self.assertRedirects(
+            response, reverse('order_success', args=[order.order_number]),
+            fetch_redirect_response=False)
+        order.refresh_from_db()
+        self.assertEqual(order.payment_status, 'paid')
+        self.assertEqual(order.status, 'confirmed')
+        self.assertEqual(order.payment_method, 'esewa')
+
+        profile = self.client.get(reverse('profile')).content.decode()
+        self.assertIn(order.order_number, profile)
+        self.assertIn('Halflife 3', profile)
+
+    def test_paying_is_idempotent(self):
+        self._start_checkout()
+        order = Order.objects.get()
+        self.client.post(reverse('esewa_checkout', args=[order.order_number]))
+        self.client.post(reverse('esewa_checkout', args=[order.order_number]))
+        order.refresh_from_db()
+        self.assertEqual(order.payment_status, 'paid')
 
 
 class FormValidatorTests(TestCase):

@@ -161,12 +161,18 @@ EMAIL_PORT = int(os.environ.get('EMAIL_PORT', 587))
 EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True') == 'True'
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
-DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'Newa Store <newastore8@gmail.com>')
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'NewaStore <newastore8@gmail.com>')
 
 ESEWA_PRODUCT_CODE = os.environ.get('ESEWA_PRODUCT_CODE', 'EPAYTEST')
 ESEWA_SECRET_KEY = os.environ.get('ESEWA_SECRET_KEY', '8gBm/:&EnhH.1/q')
 ESEWA_FORM_URL = os.environ.get('ESEWA_FORM_URL', 'https://rc-epay.esewa.com.np/api/epay/main/v2/form')
 ESEWA_STATUS_URL = os.environ.get('ESEWA_STATUS_URL', 'https://rc.esewa.com.np/api/epay/transaction/status/')
+
+_esewa_simulate = os.environ.get('ESEWA_SIMULATE', 'auto').strip().lower()
+if _esewa_simulate == 'auto':
+    ESEWA_SIMULATE = ESEWA_PRODUCT_CODE == 'EPAYTEST'
+else:
+    ESEWA_SIMULATE = _esewa_simulate in ('1', 'true', 'yes', 'on')
 
 X_FRAME_OPTIONS = 'DENY'
 SECURE_REFERRER_POLICY = 'same-origin'
@@ -186,13 +192,13 @@ if not DEBUG:
     SECURE_CONTENT_TYPE_NOSNIFF = True
 
 JAZZMIN_SETTINGS = {
-    "site_title": "Newa Store Admin",
-    "site_header": "Newa Store",
-    "site_brand": "Newa Store",
+    "site_title": "NewaStore Admin",
+    "site_header": "NewaStore",
+    "site_brand": "NewaStore",
     "site_logo": "images/logo.png",
     "login_logo": "images/logo.png",
-    "welcome_sign": "Welcome to Newa Store Dashboard",
-    "copyright": "Newa Store",
+    "welcome_sign": "Welcome to NewaStore Dashboard",
+    "copyright": "NewaStore",
     "search_model": ["auth.User", "store.Order", "store.Product"],
     "user_avatar": None,
     "topmenu_links": [

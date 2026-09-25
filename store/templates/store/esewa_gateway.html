@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% load static store_extras %}
+
+{% block content %}
+<div class="container section" style="max-width:560px">
+    <div class="checkout-section" style="text-align:center">
+        <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:8px">
+            <i class="fas fa-wallet" style="font-size:1.4rem;color:#60bb46"></i>
+            <h1 style="font-size:1.5rem">Pay with eSewa</h1>
+        </div>
+        <p class="text-muted mb-2">Order <strong>{{ order.order_number }}</strong></p>
+        <div class="mb-4" style="font-size:1.9rem;font-weight:700">{{ currency_symbol }} {{ order.total|floatformat:2 }}</div>
+
+        <div class="mb-4" style="text-align:left">
+            {% for item in order.items.all %}
+            <div style="display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--border)">
+                <span>{{ item.product_name }}{% if item.quantity > 1 %} × {{ item.quantity }}{% endif %}</span>
+                <span class="text-muted">{{ currency_symbol }} {{ item.total_price|floatformat:2 }}</span>
+            </div>
+            {% endfor %}
+        </div>
+
+        <form method="POST" action="{% url 'esewa_checkout' order.order_number %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-primary btn-lg btn-block" style="background:#60bb46;border-color:#60bb46">
+                <i class="fas fa-lock"></i> Pay {{ currency_symbol }} {{ order.total|floatformat:2 }}
+            </button>
+        </form>
+        <a href="{% url 'product_list' %}" class="btn btn-ghost btn-block mt-2">
+            <i class="fas fa-arrow-left"></i> Cancel and keep shopping
+        </a>
+        <p class="text-muted text-center mt-3" style="font-size:.78rem">
+            eSewa sandbox — no real money is charged. Completing payment confirms
+            your order; you'll find it under <strong>My Orders</strong> in your account.
+        </p>
+    </div>
+</div>
+{% endblock %}

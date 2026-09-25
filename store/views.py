@@ -548,13 +548,35 @@ def _create_order_and_pay(request, form, manager):
 
 
 def esewa_checkout(request, order_number):
-    """Render the signed auto-submit form that POSTs the order to eSewa."""
+    """eSewa payment step.
+
+    Against the public sandbox (``settings.ESEWA_SIMULATE``) this renders a
+    local gateway page that completes the order in-site — with a clear path
+    back to the store — instead of bouncing the shopper off to eSewa's RC host
+    with no return. With live credentials it renders the real signed
+    auto-submit form and fulfilment still runs through the HMAC-verified
+    ``esewa_verify`` callback.
+    """
     order = get_object_or_404(Order, order_number=order_number)
-    if order.payment_status == 'paid':
+    if (request.user.is_authenticated and order.user
+            and order.user != request.user and not request.user.is_staff):
+        raise Http404
+    if order.is_paid:
         return redirect('order_success', order_number=order.order_number)
     if not is_esewa_configured():
         messages.error(request, 'eSewa is not available right now. Please choose another method.')
         return redirect('payment_failed', order_number=order.order_number)
+
+    if settings.ESEWA_SIMULATE:
+        if request.method == 'POST':
+            mark_order_paid(order, gateway='esewa', txn_id=f'SANDBOX-{order.order_number}')
+            messages.success(request, 'Payment received via eSewa. Your order is confirmed.')
+            return redirect('order_success', order_number=order.order_number)
+        return render(request, 'store/esewa_gateway.html', {
+            'order': order,
+            'page_title': 'eSewa Payment',
+        })
+
     form = build_esewa_form(
         order,
         success_url=request.build_absolute_uri(reverse('esewa_verify')),
@@ -699,7 +721,7 @@ def profile(request):
         'pending_count': orders.filter(status='pending').count(),
         'completed_count': orders.filter(payment_status='paid').count(),
         'wishlist_count': Wishlist.objects.filter(user=request.user).first().items.count() if Wishlist.objects.filter(user=request.user).exists() else 0,
-        'recent_orders': orders[:5],
+        'recent_orders': orders.prefetch_related('items')[:5],
         'page_title': 'My Account',
     }
     return render(request, 'store/profile.html', context)

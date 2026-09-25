@@ -435,7 +435,7 @@ class SiteSettingsAdmin(admin.ModelAdmin):
             return
         try:
             send_mail(
-                'Newa Store - SMTP test',
+                'NewaStore - SMTP test',
                 'If you received this, email delivery is working.',
                 settings.DEFAULT_FROM_EMAIL, [to], fail_silently=False)
             self.message_user(request, f'Test email sent to {to}.', level=messages.SUCCESS)

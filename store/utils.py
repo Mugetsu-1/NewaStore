@@ -90,7 +90,7 @@ def send_welcome_email(user):
         'home_url': _absolute(reverse('home')),
     }
     send_templated_email(
-        'Welcome to Newa Store!',
+        'Welcome to NewaStore!',
         'emails/welcome.html',
         context,
         [user.email],

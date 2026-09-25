@@ -5,15 +5,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}{{ page_title|default:"Home" }} — {{ site_settings.site_name|default:"Newa Store" }}{% endblock %}</title>
-    <meta name="description" content="{% block meta_description %}{{ meta_description|default:site_settings.meta_description|default:'Shop the latest games, electronics and digital products at Newa Store.' }}{% endblock %}">
+    <title>{% block title %}{{ page_title|default:"Home" }} — {{ site_settings.site_name|default:"NewaStore" }}{% endblock %}</title>
+    <meta name="description" content="{% block meta_description %}{{ meta_description|default:site_settings.meta_description|default:'Shop the latest games, electronics and digital products at NewaStore.' }}{% endblock %}">
     <meta name="keywords" content="{% block meta_keywords %}{{ site_settings.meta_keywords|default:'ecommerce, games, electronics, online store' }}{% endblock %}">
     <meta name="csrf-token" content="{{ csrf_token }}">
 
     <meta property="og:type" content="website">
-    <meta property="og:title" content="{{ page_title|default:'Newa Store' }}">
-    <meta property="og:description" content="{{ meta_description|default:site_settings.meta_description|default:'Shop the latest products at Newa Store.' }}">
-    <meta property="og:site_name" content="{{ site_settings.site_name|default:'Newa Store' }}">
+    <meta property="og:title" content="{{ page_title|default:'NewaStore' }}">
+    <meta property="og:description" content="{{ meta_description|default:site_settings.meta_description|default:'Shop the latest products at NewaStore.' }}">
+    <meta property="og:site_name" content="{{ site_settings.site_name|default:'NewaStore' }}">
     <meta name="twitter:card" content="summary_large_image">
 
     <link rel="icon" href="{% if site_settings.favicon %}{{ site_settings.favicon.url }}{% else %}{% static 'images/logo.png' %}{% endif %}">
@@ -70,7 +70,7 @@
                 {% else %}
                     <i class="fas fa-gamepad" style="color:var(--primary)"></i>
                 {% endif %}
-                <span>{{ site_settings.site_name|default:"Newa" }}<span class="dot">Store</span></span>
+                <span>Newa<span class="dot">Store</span></span>
             </a>
 
             <nav class="nav">
@@ -189,7 +189,7 @@
         <div class="container">
             <div class="newsletter-box">
                 <div>
-                    <h2 style="font-size:1.6rem">Join the Newa Store newsletter</h2>
+                    <h2 style="font-size:1.6rem">Join the NewaStore newsletter</h2>
                     <p class="text-muted mt-1">Get exclusive deals, new arrivals and gaming news straight to your inbox.</p>
                 </div>
                 <form class="newsletter-form" method="post" action="{% url 'newsletter_subscribe' %}" data-newsletter>
@@ -208,7 +208,7 @@
                 <div class="footer-brand">
                     <a href="{% url 'home' %}" class="logo">
                         <i class="fas fa-gamepad" style="color:var(--primary)"></i>
-                        <span>{{ site_settings.site_name|default:"Newa" }}<span class="dot">Store</span></span>
+                        <span>Newa<span class="dot">Store</span></span>
                     </a>
                     <p>{{ site_settings.site_tagline|default:"Your one-stop destination for games, electronics and digital goods. Shop with confidence." }}</p>
                     <div class="social">
@@ -247,7 +247,7 @@
                 </div>
             </div>
             <div class="footer-bottom">
-                <span>&copy; {% now "Y" %} {{ site_settings.site_name|default:"Newa Store" }}. All rights reserved.</span>
+                <span>&copy; {% now "Y" %} {{ site_settings.site_name|default:"NewaStore" }}. All rights reserved.</span>
                 <div class="pay-icons">
                     <i class="fas fa-wallet" title="eSewa"></i>
                     <i class="fas fa-university" title="Nay Bank Transfer"></i>

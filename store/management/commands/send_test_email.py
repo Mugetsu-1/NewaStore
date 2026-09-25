@@ -20,14 +20,14 @@ class Command(BaseCommand):
         self.stdout.write(f"Host    : {settings.EMAIL_HOST}:{settings.EMAIL_PORT} (TLS={settings.EMAIL_USE_TLS})")
         self.stdout.write(f"From    : {settings.DEFAULT_FROM_EMAIL}")
         body = (
-            "If you received this email, your Newa Store SMTP configuration works.\n\n"
+            "If you received this email, your NewaStore SMTP configuration works.\n\n"
             f"Backend: {settings.EMAIL_BACKEND}\n"
             f"Host: {settings.EMAIL_HOST}:{settings.EMAIL_PORT} (TLS={settings.EMAIL_USE_TLS})\n"
             f"From: {settings.DEFAULT_FROM_EMAIL}\n"
         )
         try:
             sent = send_mail(
-                "Newa Store - SMTP test",
+                "NewaStore - SMTP test",
                 body,
                 settings.DEFAULT_FROM_EMAIL,
                 [to],

@@ -163,15 +163,27 @@ class Command(BaseCommand):
             f"[1b/6] Demo customer {verb}: username='{username}'."))
 
     def _ensure_site_email(self):
-        """Seed the store's public contact email so the DB value is correct."""
+        """Seed the store's public contact email and brand name.
+
+        The email is forced to the real address. ``site_name`` is only healed
+        when it is blank or still a legacy/default value, so a deliberate name
+        set from the admin is left untouched.
+        """
         from store.models import SiteSettings
         target = "newastore8@gmail.com"
         site = SiteSettings.get_settings()
+        fields = []
         if site.email != target:
             site.email = target
-            site.save(update_fields=["email"])
+            fields.append("email")
+        legacy_names = {"", "Newa", "Newa Store", "newastore store", "newastore"}
+        if (site.site_name or "").strip() in legacy_names and site.site_name != "NewaStore":
+            site.site_name = "NewaStore"
+            fields.append("site_name")
+        if fields:
+            site.save(update_fields=fields)
             self.stdout.write(self.style.SUCCESS(
-                f"[1b/6] Site contact email set to {target}."))
+                f"[1b/6] Site settings updated: {', '.join(fields)}."))
 
     def _normalize_dead_capsule_urls(self):
         """Bulk-swap the dead `capsule_616x353.jpg` pattern for `header.jpg`.

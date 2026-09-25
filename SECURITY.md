@@ -1,16 +1,19 @@
 # Security Policy
 
-Newa Store is a Django + PostgreSQL e-commerce application. This document
+NewaStore is a Django + PostgreSQL e-commerce application. This document
 describes the security controls that are implemented in the codebase, the
 residual gaps that remain, and a manual test matrix (T1–T12) for verifying the
 controls. It is written to be **honest about what is and is not enforced** so
 the posture can be assessed accurately before any production deployment.
 
-> **Money movement:** The eSewa gateway runs against its official
-> **sandbox/test** endpoint (eSewa ePay v2 RC). Nay Bank Transfer settles
-> offline. No real funds move in this configuration. Swap in live
-> credentials and production URLs — and complete the production checklist in
-> `README.md` — before accepting real payments.
+> **Money movement:** The eSewa gateway ships in **sandbox** mode. By default
+> (`ESEWA_SIMULATE`, auto-on for the public `EPAYTEST` product code) it completes
+> the order on a **local in-site gateway page** — no external round-trip and no
+> real funds. Supplying **live** eSewa credentials (or setting `ESEWA_SIMULATE=False`)
+> switches to the official eSewa ePay v2 flow with HMAC-SHA256 callback
+> verification. Nay Bank Transfer settles offline. Swap in live credentials and
+> production URLs — and complete the production checklist in `README.md` — before
+> accepting real payments.
 
 ## Reporting a vulnerability
 
@@ -46,7 +49,7 @@ Status legend: **✅ Implemented** · **🟡 Partial** · **⛔ Gap** (see §B).
 | 9 | Secure cookies | `SESSION_COOKIE_HTTPONLY=True`, `SESSION_COOKIE_SAMESITE`/`CSRF_COOKIE_SAMESITE='Lax'` always; `SESSION_COOKIE_SECURE`/`CSRF_COOKIE_SECURE` when `DEBUG=False` | ✅ | `newastore/settings.py` |
 | 10 | Secrets management | Secrets read from environment/`.env`; `.env` is git-ignored and untracked; `SECRET_KEY` **raises** `ImproperlyConfigured` if unset while `DEBUG=False`; no usable secret literals in source | ✅ | `SECRET_KEY` guard in `newastore/settings.py`; `.gitignore` |
 | 11 | Security headers | `SECURE_CONTENT_TYPE_NOSNIFF`, `SECURE_REFERRER_POLICY='same-origin'`, `X_FRAME_OPTIONS='DENY'`, legacy `SECURE_BROWSER_XSS_FILTER` | ✅ | `newastore/settings.py` |
-| 12 | Payment integrity | Server-side verification of the eSewa callback: HMAC-SHA256 signature check over the returned fields + status + amount, with idempotent fulfillment via `mark_order_paid`. Nay Bank Transfer is settled manually by an admin after verifying the deposit | ✅ | `store/payments.py` (`verify_esewa_signature`); `esewa_verify` in `store/views.py` |
+| 12 | Payment integrity | Two modes. **Live** (or `ESEWA_SIMULATE=False`): server-side verification of the eSewa redirect callback — HMAC-SHA256 signature check over the returned fields + status + amount, with idempotent fulfillment via `mark_order_paid`. **Public EPAYTEST sandbox** (`ESEWA_SIMULATE` on by default): a local in-site gateway confirms the order on a CSRF-protected POST — no external round-trip, no signature to verify, no real funds. Nay Bank Transfer is settled manually by an admin after verifying the deposit | ✅ | `store/payments.py` (`verify_esewa_signature`); `esewa_checkout`/`esewa_verify` in `store/views.py`; `ESEWA_SIMULATE` in `newastore/settings.py` |
 | 13 | Rate limiting / DoS | DRF throttling: anonymous **120/min**, contact endpoint **5/min** | 🟡 | `REST_FRAMEWORK` throttle config in `newastore/settings.py`; HTML login unthrottled — see §B |
 | 14 | Error handling / info disclosure | `DEBUG` defaults to **False**; custom 404/500 pages; startup config guard prevents booting insecurely in prod | ✅ | `DEBUG` default + `SECRET_KEY` guard in `newastore/settings.py`; `newastore/urls.py` handlers |
 | 15 | Input validation | Django forms + model validation on all mutations, including Gmail-only email and Nepali mobile-number format validators shared across sign-up, profile, checkout, contact and newsletter; DRF serializers on the JSON API; user image uploads use `ImageField` (Pillow-validated) | 🟡 | `store/validators.py`, `store/forms.py`, `store/models.py`; upload size/MIME allowlist — see §B |
@@ -82,7 +85,7 @@ coursework build. Each should be revisited before a real production launch.
 ## C. Manual test matrix (T1–T12)
 
 Run against a development/staging database only. Many rows have **automated
-coverage** in `store/tests.py` (73 tests) and `verify_all.py` (end-to-end
+coverage** in `store/tests.py` (76 tests) and `verify_all.py` (end-to-end
 route/checkout/admin/config checks); those are noted per row. Rows without automated coverage rely on the
 named framework control and should be spot-checked manually.
 
@@ -96,7 +99,8 @@ named framework control and should be spot-checked manually.
 | T6 | CSRF | POST to `/checkout/` (or add-to-cart) omitting the CSRF token | Rejected with `403 Forbidden` | Framework (`CsrfViewMiddleware`); manual |
 | T7 | Stored/reflected XSS | Submit `<script>alert(1)</script>` in a review, contact message, and search query | Rendered escaped as text; no script executes | Framework (template auto-escaping); manual |
 | T8 | SQL injection | Search for `' OR 1=1 --` and `"; DROP TABLE store_product; --` | Treated as a literal query; no error, no injection | Framework (ORM parameterization); manual |
-| T9 | eSewa signature integrity | Complete checkout via eSewa; replay the callback with a **tampered `total_amount`**; replay a **valid** signed callback twice | Tampered/forged callback → order stays unpaid, redirect to payment-failed; valid callback → paid + confirmed; second valid callback is idempotent | `store/tests.py` (`RealGatewayTests`); `verify_all.py` §4 |
+| T9 | eSewa signature integrity (live mode) | With `ESEWA_SIMULATE=False`, complete checkout via eSewa; replay the callback with a **tampered `total_amount`**; replay a **valid** signed callback twice | Tampered/forged callback → order stays unpaid, redirect to payment-failed; valid callback → paid + confirmed; second valid callback is idempotent | `store/tests.py` (`RealGatewayTests`, pinned `ESEWA_SIMULATE=False`); `verify_all.py` §4 |
+| T9b | eSewa sandbox in-site gateway | With the default sandbox (`ESEWA_SIMULATE` on), reach the eSewa step, confirm it renders in-site (no external redirect) with a back-to-store link, then pay | Gateway page stays on-site and leaves the order pending until paid; paying marks it paid/confirmed and it appears under My Orders; paying twice is idempotent | `store/tests.py` (`SandboxGatewayTests`) |
 | T10 | Payment method availability / offline settlement | Load `/checkout/` with eSewa unconfigured; place a Nay Bank Transfer order and confirm it is not fulfilled until an admin verifies the deposit | eSewa still lists but is disabled when unconfigured; a Nay Bank order stays `pending`/unpaid until an admin marks it paid (no self-service fulfillment) | `store/tests.py`; `verify_all.py` §4 |
 | T11 | Transport / headers | Set `DEBUG=False` and request over HTTP behind the proxy header | Redirects to HTTPS; responses carry HSTS, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin` | `newastore/settings.py` prod block; manual with `curl -I` |
 | T12 | Secrets / config hygiene | Inspect `git status`/`git ls-files`; unset `DJANGO_SECRET_KEY` with `DEBUG=False` | `.env` is untracked; boot **fails** (`ImproperlyConfigured`) rather than using an insecure key; `DEBUG` defaults to False | `newastore/settings.py` guards; `verify_all.py` config section; manual `git ls-files` |

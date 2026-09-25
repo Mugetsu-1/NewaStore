@@ -5,7 +5,7 @@
 <div style="max-width:600px;margin:auto;background:#fff;border-radius:12px;overflow:hidden">
   <div style="background:#16a34a;padding:24px;color:#fff">
     <h1 style="margin:0;font-size:22px">Payment received</h1>
-    <p style="margin:6px 0 0">Thank you for your purchase at {{ site_settings.site_name|default:"Newa Store" }}!</p>
+    <p style="margin:6px 0 0">Thank you for your purchase at {{ site_settings.site_name|default:"NewaStore" }}!</p>
   </div>
   <div style="padding:24px">
     <p>Hi {{ order.customer_name }},</p>
@@ -26,7 +26,7 @@
     <p style="text-align:right;font-size:18px"><strong>Total: {{ currency_symbol }} {{ order.total|floatformat:2 }}</strong></p>
     <p>Your payment is confirmed. Your game keys are available on your
        <a href="{{ order_url }}">order page</a> and have been sent to your email.</p>
-    <p>— The {{ site_settings.site_name|default:"Newa Store" }} Team</p>
+    <p>— The {{ site_settings.site_name|default:"NewaStore" }} Team</p>
   </div>
 </div>
 </body>

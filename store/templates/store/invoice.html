@@ -17,7 +17,7 @@ th,td{padding:10px;border-bottom:1px solid #ddd;text-align:left}
 </head>
 <body>
 <div class="head">
-  <div><h1>NEWA STORE</h1><p>Invoice / Receipt</p></div>
+  <div><h1>NEWASTORE</h1><p>Invoice / Receipt</p></div>
   <div style="text-align:right"><strong>Order:</strong> {{ order.order_number }}<br><strong>Date:</strong> {{ order.created_at|date:"M d, Y" }}<br><strong>Status:</strong> {{ order.get_status_display }}</div>
 </div>
 <p><strong>Bill To:</strong> {{ order.billing_address.full_name }} — {{ order.billing_address.city }}, {{ order.billing_address.country }}</p>
