@@ -168,7 +168,11 @@ ESEWA_SECRET_KEY = os.environ.get('ESEWA_SECRET_KEY', '8gBm/:&EnhH.1/q')
 ESEWA_FORM_URL = os.environ.get('ESEWA_FORM_URL', 'https://rc-epay.esewa.com.np/api/epay/main/v2/form')
 ESEWA_STATUS_URL = os.environ.get('ESEWA_STATUS_URL', 'https://rc.esewa.com.np/api/epay/transaction/status/')
 
-_esewa_simulate = os.environ.get('ESEWA_SIMULATE', 'auto').strip().lower()
+# Default to the REAL eSewa gateway: with the EPAYTEST sandbox credentials above
+# the signed form posts to eSewa's own hosted RC test page (no real money moves),
+# which is what shoppers actually see. Set ESEWA_SIMULATE=true to fall back to the
+# in-site demo page, or ESEWA_SIMULATE=auto for the legacy "simulate on EPAYTEST" rule.
+_esewa_simulate = os.environ.get('ESEWA_SIMULATE', 'false').strip().lower()
 if _esewa_simulate == 'auto':
     ESEWA_SIMULATE = ESEWA_PRODUCT_CODE == 'EPAYTEST'
 else:
