@@ -25,6 +25,7 @@ urlpatterns = [
     path('payment/esewa/<str:order_number>/', views.esewa_checkout, name='esewa_checkout'),
     path('esewa-verify/', views.esewa_verify, name='esewa_verify'),
     path('payment/failed/<str:order_number>/', views.payment_failed, name='payment_failed'),
+    path('payment/esewa/<str:order_number>/demo-confirm/', views.esewa_demo_confirm, name='esewa_demo_confirm'),
     path('order/success/<str:order_number>/', views.order_success, name='order_success'),
 
     path('orders/', views.order_history, name='order_history'),

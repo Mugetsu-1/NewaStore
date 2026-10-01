@@ -633,7 +633,36 @@ def esewa_verify(request):
 
 def payment_failed(request, order_number):
     order = get_object_or_404(Order, order_number=order_number)
-    return render(request, 'store/payment_failed.html', {'order': order, 'page_title': 'Payment Failed'})
+    return render(request, 'store/payment_failed.html', {
+        'order': order,
+        'page_title': 'Payment not completed',
+        'esewa_demo': settings.ESEWA_PRODUCT_CODE == 'EPAYTEST',
+    })
+
+
+def esewa_demo_confirm(request, order_number):
+    """Sandbox-only shortcut to the success page when an eSewa login isn't available.
+
+    The real eSewa RC gateway requires an eSewa test account to sign in, which a
+    classroom/marker demo run may not have. Against the EPAYTEST sandbox (where no
+    real money moves) this lets the shopper confirm the order from our side after
+    bouncing off eSewa, so the full paid/confirmed flow can still be shown. It is
+    refused outside the sandbox, so a live deployment can never mark an order paid
+    without a real, HMAC-verified eSewa payment.
+    """
+    order = get_object_or_404(Order, order_number=order_number)
+    if (request.user.is_authenticated and order.user
+            and order.user != request.user and not request.user.is_staff):
+        raise Http404
+    if settings.ESEWA_PRODUCT_CODE != 'EPAYTEST':
+        raise Http404
+    if order.is_paid:
+        return redirect('order_success', order_number=order.order_number)
+    if request.method == 'POST':
+        mark_order_paid(order, gateway='esewa', txn_id=f'SANDBOX-DEMO-{order.order_number}')
+        messages.success(request, 'Payment received via eSewa. Your order is confirmed.')
+        return redirect('order_success', order_number=order.order_number)
+    return redirect('payment_failed', order_number=order.order_number)
 
 
 
