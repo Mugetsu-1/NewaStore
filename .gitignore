@@ -28,7 +28,12 @@ db.sqlite3-journal
 # Environment
 .env
 .env.local
-.env.*.local
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
 
 # IDE / OS
 .idea/
@@ -53,3 +58,6 @@ pip-wheel-metadata/
 
 # Database dumps
 *.sql
+*.dump
+*.backup
+*.sql.gz
