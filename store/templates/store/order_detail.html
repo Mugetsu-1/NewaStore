@@ -22,7 +22,7 @@
                 <button class="btn btn-outline btn-sm" type="submit"><i class="fas fa-redo"></i> Reorder</button>
             </form>
             {% if order.can_cancel %}
-            <form action="{% url 'cancel_order' order.order_number %}" method="post" onsubmit="return confirm('Cancel this order?')">{% csrf_token %}
+            <form action="{% url 'cancel_order' order.order_number %}" method="post" data-confirm="Cancel this order?">{% csrf_token %}
                 <button class="btn btn-danger btn-sm" type="submit"><i class="fas fa-times"></i> Cancel</button>
             </form>
             {% endif %}

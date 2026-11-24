@@ -35,6 +35,6 @@ th,td{padding:10px;border-bottom:1px solid #ddd;text-align:left}
   <tr><td>Tax</td><td>{{ currency_symbol }} {{ order.tax_amount|floatformat:2 }}</td></tr>
   <tr class="big"><td>Total</td><td>{{ currency_symbol }} {{ order.total|floatformat:2 }}</td></tr>
 </table>
-<script>window.print && window.print();</script>
+<script nonce="{{ csp_nonce }}">window.print && window.print();</script>
 </body>
 </html>

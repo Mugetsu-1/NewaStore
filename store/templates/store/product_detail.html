@@ -2,7 +2,7 @@
 {% load static store_extras %}
 
 {% block extra_head %}
-<script type="application/ld+json">
+<script nonce="{{ csp_nonce }}" type="application/ld+json">
 {
   "@context": "https://schema.org/",
   "@type": "Product",
@@ -46,7 +46,7 @@
             <div class="pd-main-img">
                 {% with img=images.first %}
                     {% if img and img.thumbnail_url %}
-                        <img id="pd-main-img" src="{{ img.thumbnail_url }}" alt="{{ img.alt_text|default:product.name }}" onerror="this.onerror=null;this.src='{% static 'images/placeholder.svg' %}'">
+                        <img id="pd-main-img" src="{{ img.thumbnail_url }}" alt="{{ img.alt_text|default:product.name }}">
                     {% else %}
                         <img id="pd-main-img" src="{% static 'images/placeholder.svg' %}" alt="{{ product.name }}">
                     {% endif %}
@@ -56,7 +56,7 @@
             <div class="pd-thumbs">
                 {% for img in images %}
                 <div class="pd-thumb {% if forloop.first %}active{% endif %}" data-src="{{ img.thumbnail_url }}">
-                    <img src="{{ img.thumbnail_url }}" alt="{{ img.alt_text|default:product.name }}" onerror="this.onerror=null;this.src='{% static 'images/placeholder.svg' %}'">
+                    <img src="{{ img.thumbnail_url }}" alt="{{ img.alt_text|default:product.name }}">
                 </div>
                 {% endfor %}
             </div>
@@ -139,7 +139,7 @@
                         data-login-url="{% url 'login' %}">
                     <i class="{% if in_wishlist %}fas{% else %}far{% endif %} fa-heart"></i> {% if in_wishlist %}In Wishlist{% else %}Add to Wishlist{% endif %}
                 </button>
-                <button class="btn btn-outline" onclick="navigator.share && navigator.share({title:'{{ product.name|escapejs }}',url:location.href})"><i class="fas fa-share-nodes"></i> Share</button>
+                <button class="btn btn-outline" type="button" data-share-title="{{ product.name }}"><i class="fas fa-share-nodes"></i> Share</button>
             </div>
 
             <div class="pd-meta">
@@ -251,33 +251,4 @@
     </section>
     {% endif %}
 </div>
-{% endblock %}
-
-{% block extra_js %}
-<script>
-document.querySelectorAll('[data-helpful-url]').forEach(function(btn){
-  btn.addEventListener('click', function(){
-    fetch(btn.dataset.helpfulUrl, {method:'POST', headers:{'X-CSRFToken':'{{ csrf_token }}','X-Requested-With':'XMLHttpRequest'}})
-      .then(function(r){return r.json();})
-      .then(function(d){ btn.innerHTML = '<i class="fas fa-thumbs-up"></i> Helpful (' + d.helpful_votes + ')'; });
-  });
-});
-
-(function(){
-  var block = document.querySelector('[data-rec-block]');
-  if(!block) return;
-  block.querySelectorAll('[data-rec-item] a').forEach(function(a){
-    a.addEventListener('click', function(){
-      var item = a.closest('[data-rec-item]');
-      if(window.gtag){
-        gtag('event', 'select_recommendation', {
-          source_item_id: block.dataset.recSource,
-          recommended_item_id: item.dataset.recId,
-          similarity_score: item.dataset.recScore
-        });
-      }
-    });
-  });
-})();
-</script>
 {% endblock %}

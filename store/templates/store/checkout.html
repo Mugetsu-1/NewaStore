@@ -126,7 +126,7 @@
                     {% for item in items %}
                     <div class="order-mini-item">
                         {% with img=item.product.images.first %}
-                        <img src="{% if img and img.card_image_url %}{{ img.card_image_url }}{% else %}{% static 'images/placeholder.svg' %}{% endif %}" alt="{{ item.product.name }}" onerror="this.onerror=null;this.src='{% static 'images/placeholder.svg' %}'">
+                        <img src="{% if img and img.card_image_url %}{{ img.card_image_url }}{% else %}{% static 'images/placeholder.svg' %}{% endif %}" alt="{{ item.product.name }}">
                         {% endwith %}
                         <div style="flex:1">
                             <div style="font-weight:600;font-size:.85rem">{{ item.product.name }}</div>
@@ -156,15 +156,4 @@
         </div>
     </form>
 </div>
-{% endblock %}
-
-{% block extra_js %}
-<script>
-document.addEventListener('DOMContentLoaded', function(){
-  var form = document.getElementById('checkout-form');
-  form.querySelectorAll('input:not([type=radio]):not([type=checkbox]), select, textarea').forEach(function(el){
-    if(!el.classList.contains('form-control') && el.type !== 'hidden') el.classList.add('form-control');
-  });
-});
-</script>
 {% endblock %}

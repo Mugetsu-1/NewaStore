@@ -18,7 +18,7 @@
             Taking you to eSewa's secure payment page…
         </div>
 
-        <form id="esewa-form" method="POST" action="{{ esewa_action }}">
+        <form id="esewa-form" method="POST" action="{{ esewa_action }}" data-auto-submit>
             {% for name, value in esewa_fields.items %}
             <input type="hidden" name="{{ name }}" value="{{ value }}">
             {% endfor %}
@@ -32,13 +32,4 @@
         </p>
     </div>
 </div>
-{% endblock %}
-
-{% block extra_js %}
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-  var form = document.getElementById('esewa-form');
-  if (form) form.submit();
-});
-</script>
 {% endblock %}

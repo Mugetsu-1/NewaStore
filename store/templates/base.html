@@ -17,32 +17,19 @@
     <meta name="twitter:card" content="summary_large_image">
 
     <link rel="icon" href="{% if site_settings.favicon %}{{ site_settings.favicon.url }}{% else %}{% static 'images/logo.png' %}{% endif %}">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+          integrity="sha384-t1nt8BQoYMLFN5p42tRAtuAAFQaCQODekUVeKKZrEnEyp4H2R0RHFz0KWpmj7i8g"
+          crossorigin="anonymous" referrerpolicy="no-referrer">
     <link rel="stylesheet" href="{% static 'css/style.css' %}">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-      tailwind.config = {
-        corePlugins: { preflight: false },
-        theme: {
-          extend: {
-            colors: {
-              // Steam-inspired accents that work with the site's CSS vars
-              steam: { blue: '#66c0f4', navy: '#1b2838', deep: '#171a21' },
-              sale: { green: '#a4d007', dark: '#4c6b22' },
-            }
-          }
-        }
-      };
-    </script>
     {% block extra_css %}{% endblock %}
 
     {% if site_settings.google_analytics_id %}
-    <script async src="https://www.googletagmanager.com/gtag/js?id={{ site_settings.google_analytics_id }}"></script>
-    <script>
+    <script nonce="{{ csp_nonce }}" async src="https://www.googletagmanager.com/gtag/js?id={{ site_settings.google_analytics_id|urlencode }}"></script>
+    <script nonce="{{ csp_nonce }}">
       window.dataLayer = window.dataLayer || [];
       function gtag(){dataLayer.push(arguments);}
       gtag('js', new Date());
-      gtag('config', '{{ site_settings.google_analytics_id }}');
+      gtag('config', '{{ site_settings.google_analytics_id|escapejs }}');
     </script>
     {% endif %}
     {% block extra_head %}{% endblock %}
@@ -103,13 +90,13 @@
             </div>
 
             <div class="header-actions">
-                <button class="action-btn menu-toggle" onclick="toggleNav()" aria-label="Menu"><i class="fas fa-bars"></i></button>
+                <button class="action-btn menu-toggle" data-nav-toggle aria-label="Menu"><i class="fas fa-bars"></i></button>
                 {% if user.is_authenticated %}
                 <a href="{% url 'wishlist' %}" class="action-btn" title="Wishlist">
                     <i class="far fa-heart"></i><span class="label">Wishlist</span>
                 </a>
                 {% endif %}
-                <button class="action-btn" onclick="openCart()" title="Cart">
+                <button class="action-btn" data-cart-open title="Cart">
                     <i class="fas fa-shopping-bag"></i>
                     <span class="cart-count" data-cart-count {% if not cart or cart.items_count == 0 %}style="display:none"{% endif %}>{{ cart.items_count|default:0 }}</span>
                     <span class="label">Cart</span>
@@ -160,16 +147,16 @@
         <div class="alert alert-{{ message.tags|default:'info' }}">
             <i class="fas {% if message.tags == 'success' %}fa-circle-check{% elif message.tags == 'error' %}fa-circle-exclamation{% elif message.tags == 'warning' %}fa-triangle-exclamation{% else %}fa-circle-info{% endif %}"></i>
             <span>{{ message }}</span>
-            <button class="alert-close" onclick="this.parentElement.remove()">&times;</button>
+            <button class="alert-close" type="button">&times;</button>
         </div>
         {% endfor %}
     </div>
 
-    <div class="drawer-overlay" onclick="closeCart()"></div>
+    <div class="drawer-overlay"></div>
     <aside class="drawer">
         <div class="drawer-head">
             <h3><i class="fas fa-shopping-bag"></i> Your Cart</h3>
-            <button class="btn btn-ghost btn-sm" onclick="closeCart()"><i class="fas fa-times"></i></button>
+            <button class="btn btn-ghost btn-sm" type="button" data-cart-close aria-label="Close cart"><i class="fas fa-times"></i></button>
         </div>
         <div class="drawer-body" id="drawer-body" data-url="{% url 'cart_mini' %}">
             {% include 'store/partials/cart_mini.html' %}
@@ -212,15 +199,15 @@
                     </a>
                     <p>{{ site_settings.site_tagline|default:"Your one-stop destination for games, electronics and digital goods. Shop with confidence." }}</p>
                     <div class="social">
-                        {% if site_settings.social_facebook %}<a href="{{ site_settings.social_facebook }}" target="_blank"><i class="fab fa-facebook-f"></i></a>{% endif %}
-                        {% if site_settings.social_twitter %}<a href="{{ site_settings.social_twitter }}" target="_blank"><i class="fab fa-x-twitter"></i></a>{% endif %}
-                        {% if site_settings.social_instagram %}<a href="{{ site_settings.social_instagram }}" target="_blank"><i class="fab fa-instagram"></i></a>{% endif %}
-                        {% if site_settings.social_youtube %}<a href="{{ site_settings.social_youtube }}" target="_blank"><i class="fab fa-youtube"></i></a>{% endif %}
-                        {% if site_settings.social_linkedin %}<a href="{{ site_settings.social_linkedin }}" target="_blank"><i class="fab fa-linkedin-in"></i></a>{% endif %}
+                        {% if site_settings.social_facebook %}<a href="{{ site_settings.social_facebook }}" target="_blank" rel="noopener noreferrer"><i class="fab fa-facebook-f"></i></a>{% endif %}
+                        {% if site_settings.social_twitter %}<a href="{{ site_settings.social_twitter }}" target="_blank" rel="noopener noreferrer"><i class="fab fa-x-twitter"></i></a>{% endif %}
+                        {% if site_settings.social_instagram %}<a href="{{ site_settings.social_instagram }}" target="_blank" rel="noopener noreferrer"><i class="fab fa-instagram"></i></a>{% endif %}
+                        {% if site_settings.social_youtube %}<a href="{{ site_settings.social_youtube }}" target="_blank" rel="noopener noreferrer"><i class="fab fa-youtube"></i></a>{% endif %}
+                        {% if site_settings.social_linkedin %}<a href="{{ site_settings.social_linkedin }}" target="_blank" rel="noopener noreferrer"><i class="fab fa-linkedin-in"></i></a>{% endif %}
                     </div>
                 </div>
                 <div>
-                    <h4>Shop</h4>
+                    <h2>Shop</h2>
                     <div class="footer-links">
                         <a href="{% url 'product_list' %}">All Products</a>
                         <a href="{% url 'product_list' %}?on_sale_only=1">Deals</a>
@@ -229,7 +216,7 @@
                     </div>
                 </div>
                 <div>
-                    <h4>Company</h4>
+                    <h2>Company</h2>
                     <div class="footer-links">
                         <a href="{% url 'about' %}">About Us</a>
                         <a href="{% url 'contact' %}">Contact</a>
@@ -238,7 +225,7 @@
                     </div>
                 </div>
                 <div>
-                    <h4>Contact</h4>
+                    <h2>Contact</h2>
                     <div class="footer-links">
                         <span class="text-muted"><i class="fas fa-envelope"></i> {{ site_settings.email|default:'newastore8@gmail.com' }}</span>
                         <span class="text-muted"><i class="fas fa-phone"></i> {{ site_settings.phone|default:'+977-9800000000' }}</span>
@@ -256,7 +243,7 @@
         </div>
     </footer>
 
-    <script src="{% static 'js/main.js' %}"></script>
+    <script nonce="{{ csp_nonce }}" src="{% static 'js/main.js' %}"></script>
     {% block extra_js %}{% endblock %}
 </body>
 </html>

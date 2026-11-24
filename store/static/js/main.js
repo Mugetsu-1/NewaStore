@@ -8,7 +8,8 @@
     const v = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
     return v ? v.pop() : '';
   }
-  const csrftoken = getCookie('csrftoken') || ($('[name=csrfmiddlewaretoken]') || {}).value || '';
+  const csrfMeta = $('meta[name="csrf-token"]');
+  const csrftoken = (csrfMeta && csrfMeta.content) || getCookie('csrftoken') || ($('[name=csrfmiddlewaretoken]') || {}).value || '';
 
   const IMG_PLACEHOLDER = document.body && document.body.dataset.placeholderUrl;
   if (IMG_PLACEHOLDER) {
@@ -38,6 +39,15 @@
     const nav = $('.nav');
     if (nav) nav.classList.toggle('mobile-open');
   };
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('[data-nav-toggle]')) window.toggleNav();
+    if (e.target.closest('[data-cart-open]')) window.openCart();
+    if (e.target.closest('[data-cart-close]')) window.closeCart();
+    const share = e.target.closest('[data-share-title]');
+    if (share && navigator.share) {
+      navigator.share({ title: share.dataset.shareTitle || document.title, url: location.href }).catch(() => {});
+    }
+  });
 
   document.addEventListener('DOMContentLoaded', () => {
     $$('.form-group input, .form-group select, .form-group textarea, form.auth-form input, form.auth-form select').forEach((el) => {
@@ -201,7 +211,11 @@
       error: 'fa-circle-exclamation', success: 'fa-circle-check',
       warning: 'fa-triangle-exclamation', info: 'fa-circle-info',
     };
-    el.innerHTML = `<i class="fas ${icons[type] || 'fa-circle-info'}"></i><span>${message}</span>`;
+    const icon = document.createElement('i');
+    icon.className = `fas ${icons[type] || 'fa-circle-info'}`;
+    const text = document.createElement('span');
+    text.textContent = String(message || '');
+    el.append(icon, text);
     wrap.appendChild(el);
     setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 3500);
   }
@@ -258,15 +272,41 @@
           const res = await fetch(`/search/suggest/?q=${encodeURIComponent(q)}`, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
           const json = await res.json();
           if (!json.results || !json.results.length) { suggestions.classList.remove('show'); return; }
-          suggestions.innerHTML = json.results.map((r) => {
-            const img = r.image
-              ? `<img src="${r.image}" alt="" loading="lazy">`
-              : '';
-            return `<a class="suggestion-item" href="${r.url}">
-              ${img}
-              <div><div style="font-weight:600;font-size:.88rem">${r.name}</div>
-              <div style="color:var(--primary);font-weight:700;font-size:.85rem">${r.price}</div></div></a>`;
-          }).join('');
+          suggestions.replaceChildren();
+          json.results.forEach((r) => {
+            let target;
+            try {
+              target = new URL(String(r.url || ''), location.origin);
+            } catch (err) {
+              return;
+            }
+            if (target.origin !== location.origin) return;
+            const link = document.createElement('a');
+            link.className = 'suggestion-item';
+            link.href = target.href;
+            if (r.image) {
+              try {
+                const imageUrl = new URL(String(r.image), location.origin);
+                if (imageUrl.protocol === 'https:' || imageUrl.origin === location.origin) {
+                  const image = document.createElement('img');
+                  image.src = imageUrl.href;
+                  image.alt = '';
+                  image.loading = 'lazy';
+                  link.appendChild(image);
+                }
+              } catch (err) { /* ignore malformed image URLs */ }
+            }
+            const details = document.createElement('div');
+            const name = document.createElement('div');
+            name.style.cssText = 'font-weight:600;font-size:.88rem';
+            name.textContent = String(r.name || '');
+            const price = document.createElement('div');
+            price.style.cssText = 'color:var(--primary);font-weight:700;font-size:.85rem';
+            price.textContent = String(r.price || '');
+            details.append(name, price);
+            link.appendChild(details);
+            suggestions.appendChild(link);
+          });
           suggestions.classList.add('show');
         } catch (err) {  }
       }, 250);
@@ -460,6 +500,51 @@
       };
       const text = (method && labels[method.value]) || 'Placing your order…';
       showToast(text, 'info');
+    });
+  }
+
+  const autoSubmitForm = $('form[data-auto-submit]');
+  if (autoSubmitForm) autoSubmitForm.submit();
+
+  document.addEventListener('submit', (e) => {
+    const prompt = e.target && e.target.dataset && e.target.dataset.confirm;
+    if (prompt && !window.confirm(prompt)) e.preventDefault();
+  });
+
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-helpful-url]');
+    if (!btn) return;
+    btn.disabled = true;
+    try {
+      const response = await fetch(btn.dataset.helpfulUrl, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': csrftoken, 'X-Requested-With': 'XMLHttpRequest' },
+      });
+      if (!response.ok) throw new Error('request failed');
+      const data = await response.json();
+      btn.replaceChildren();
+      const icon = document.createElement('i');
+      icon.className = 'fas fa-thumbs-up';
+      btn.append(icon, document.createTextNode(` Helpful (${Number(data.helpful_votes) || 0})`));
+    } catch (err) {
+      btn.disabled = false;
+      showToast('Could not record your vote.', 'error');
+    }
+  });
+
+  const recBlock = $('[data-rec-block]');
+  if (recBlock) {
+    $$('[data-rec-item] a', recBlock).forEach((link) => {
+      link.addEventListener('click', () => {
+        const item = link.closest('[data-rec-item]');
+        if (window.gtag && item) {
+          window.gtag('event', 'select_recommendation', {
+            source_item_id: recBlock.dataset.recSource,
+            recommended_item_id: item.dataset.recId,
+            similarity_score: item.dataset.recScore,
+          });
+        }
+      });
     });
   }
 
