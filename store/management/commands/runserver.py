@@ -25,12 +25,16 @@ Set the environment variable NEWASTORE_SKIP_BOOTSTRAP=1 to disable the
 bootstrap without changing the command line (handy for CI).
 """
 import os
+import logging
 import threading
 
 from django.contrib.staticfiles.management.commands.runserver import (
     Command as StaticFilesRunserverCommand,
 )
 from django.core.management import call_command
+
+
+logger = logging.getLogger(__name__)
 
 
 class Command(StaticFilesRunserverCommand):
@@ -111,4 +115,4 @@ class Command(StaticFilesRunserverCommand):
                 stdout=self.stdout, stderr=self.stderr,
             )
         except Exception:
-            pass
+            logger.exception('Background artwork audit failed')

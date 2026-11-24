@@ -38,6 +38,8 @@ import os
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.core.management.base import BaseCommand
 from django.db import connection
@@ -107,35 +109,36 @@ class Command(BaseCommand):
             return None
 
     def _ensure_superuser(self):
-        """Make the admin account match the credentials in the environment.
+        """Optionally create one superuser, but never reset/elevate an account.
 
-        Credentials come from env (DJANGO_SUPERUSER_USERNAME / _EMAIL /
-        _PASSWORD), falling back to admin/admin for a bare local checkout.
-        This is authoritative and idempotent: the account is created when
-        missing and otherwise has its email, staff/superuser flags and
-        password reset to match, so /admin login always agrees with .env -
-        including right after a users-only reset. A default password is fine
-        for a localhost project but must be changed before any real
-        deployment, so we say so loudly.
+        Account bootstrapping is disabled unless ``BOOTSTRAP_ACCOUNTS=true``.
+        This prevents a production boot from silently creating ``admin/admin``
+        or resetting a real administrator's password on every deploy.
         """
+        if os.environ.get("BOOTSTRAP_ACCOUNTS", "").strip().lower() not in {
+            "1", "true", "yes", "on",
+        }:
+            return
         User = get_user_model()
-        username = os.environ.get("DJANGO_SUPERUSER_USERNAME", "admin")
-        email = os.environ.get("DJANGO_SUPERUSER_EMAIL", "admin@newastore.local")
-        password = os.environ.get("DJANGO_SUPERUSER_PASSWORD", "admin")
-        user, created = User.objects.get_or_create(
-            username=username, defaults={"email": email})
-        user.email = email
-        user.is_staff = True
-        user.is_superuser = True
-        user.set_password(password)
-        user.save()
-        verb = "created" if created else "updated"
-        self.stdout.write(self.style.SUCCESS(
-            f"[1b/6] Admin account {verb}: username='{username}'."))
-        if password == "admin":
+        username = os.environ.get("DJANGO_SUPERUSER_USERNAME", "").strip()
+        email = os.environ.get("DJANGO_SUPERUSER_EMAIL", "").strip()
+        password = os.environ.get("DJANGO_SUPERUSER_PASSWORD", "")
+        if not all((username, email, password)):
+            raise ValidationError(
+                "BOOTSTRAP_ACCOUNTS requires all DJANGO_SUPERUSER_* values."
+            )
+        existing = User.objects.filter(username=username).first()
+        if existing:
             self.stdout.write(self.style.WARNING(
-                "        Default password in use - set DJANGO_SUPERUSER_PASSWORD "
-                "in .env and change it in /admin before deploying."))
+                f"[1b/6] Admin '{username}' already exists; credentials and privileges were not changed."
+            ))
+            return
+        candidate = User(username=username, email=email)
+        validate_password(password, user=candidate)
+        User.objects.create_superuser(username=username, email=email, password=password)
+        self.stdout.write(self.style.SUCCESS(
+            f"[1b/6] Admin account created once: username='{username}'."
+        ))
 
     def _ensure_demo_user(self):
         """Make the demo customer match DEMO_USER_* from the environment.
@@ -145,22 +148,30 @@ class Command(BaseCommand):
         created or reset in the same authoritative way as the admin account,
         but as a plain (non-staff) shopper.
         """
-        password = os.environ.get("DEMO_USER_PASSWORD")
+        if os.environ.get("BOOTSTRAP_ACCOUNTS", "").strip().lower() not in {
+            "1", "true", "yes", "on",
+        }:
+            return
+        password = os.environ.get("DEMO_USER_PASSWORD", "")
         if not password:
             return
         User = get_user_model()
-        username = os.environ.get("DEMO_USER_USERNAME", "demo")
-        email = os.environ.get("DEMO_USER_EMAIL", "demo@newastore.local")
-        user, created = User.objects.get_or_create(
-            username=username, defaults={"email": email})
-        user.email = email
-        user.is_staff = False
-        user.is_superuser = False
-        user.set_password(password)
-        user.save()
-        verb = "created" if created else "updated"
+        username = os.environ.get("DEMO_USER_USERNAME", "").strip()
+        email = os.environ.get("DEMO_USER_EMAIL", "").strip()
+        if not username or not email:
+            raise ValidationError(
+                "DEMO_USER_USERNAME and DEMO_USER_EMAIL are required when a demo password is set."
+            )
+        if User.objects.filter(username=username).exists():
+            self.stdout.write(self.style.WARNING(
+                f"[1b/6] Demo customer '{username}' already exists; password was not reset."
+            ))
+            return
+        candidate = User(username=username, email=email)
+        validate_password(password, user=candidate)
+        User.objects.create_user(username=username, email=email, password=password)
         self.stdout.write(self.style.SUCCESS(
-            f"[1b/6] Demo customer {verb}: username='{username}'."))
+            f"[1b/6] Demo customer created once: username='{username}'."))
 
     def _ensure_site_email(self):
         """Seed the store's public contact email and brand name.
@@ -170,12 +181,8 @@ class Command(BaseCommand):
         set from the admin is left untouched.
         """
         from store.models import SiteSettings
-        target = "newastore8@gmail.com"
         site = SiteSettings.get_settings()
         fields = []
-        if site.email != target:
-            site.email = target
-            fields.append("email")
         legacy_names = {"", "Newa", "Newa Store", "newastore store", "newastore"}
         if (site.site_name or "").strip() in legacy_names and site.site_name != "NewaStore":
             site.site_name = "NewaStore"

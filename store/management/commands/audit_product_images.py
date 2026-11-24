@@ -23,6 +23,7 @@ import requests
 from django.core.management.base import BaseCommand
 
 from store.models import ProductImage
+from store.artwork import probe_image_url
 
 UA = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -46,13 +47,7 @@ def appid_from_url(url):
 
 
 def check(url):
-    try:
-        r = requests.get(url, headers=UA, timeout=8, stream=True, allow_redirects=True)
-        code = r.status_code
-        r.close()
-        return code in (200, 206, 403)
-    except requests.RequestException:
-        return False
+    return probe_image_url(url, timeout=8)
 
 
 def audit_image(img):

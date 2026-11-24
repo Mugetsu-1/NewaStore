@@ -12,15 +12,18 @@ import re
 import time
 import threading
 from datetime import datetime, timezone as dt_timezone
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 import requests
 import uuid
+from urllib.parse import urlsplit
 
 from django.utils import timezone as dj_tz
 from django.utils.text import slugify
+from django.core.exceptions import ValidationError
 
 from .models import Product, ProductImage, Tag, Category
+from .security import validate_artwork_url
 
 CS_API = 'https://www.cheapshark.com/api/1.0'
 STEAM_APPDETAILS = 'https://store.steampowered.com/api/appdetails'
@@ -28,6 +31,9 @@ STEAMSPY_API = 'https://steamspy.com/api.php'
 
 USER_AGENT = 'NewaStore Seeder/1.0 (educational demo project)'
 REQUEST_TIMEOUT = 25
+API_HOSTS = {
+    'www.cheapshark.com', 'store.steampowered.com', 'steamspy.com',
+}
 
 USD_TO_NPR = Decimal(os.environ.get('USD_TO_NPR', '135'))
 
@@ -286,11 +292,19 @@ class Api:
             self._last[host] = time.time()
 
     def get_json(self, url, params=None, min_interval=0.75, retries=2, ok_429=True):
-        host = re.sub(r'^https?://', '', url).split('/')[0]
+        parsed = urlsplit(url)
+        host = (parsed.hostname or '').lower()
+        if parsed.scheme != 'https' or host not in API_HOSTS or parsed.username or parsed.password:
+            return None
         for attempt in range(1, retries + 1):
             self._throttle(host, min_interval)
             try:
-                r = self.session.get(url, params=params, timeout=REQUEST_TIMEOUT)
+                r = self.session.get(
+                    url, params=params, timeout=REQUEST_TIMEOUT,
+                    allow_redirects=False,
+                )
+                if 300 <= r.status_code < 400:
+                    return None
                 if r.status_code == 429:
                     if not ok_429:
                         return 'RATE_LIMITED'
@@ -298,22 +312,11 @@ class Api:
                     continue
                 r.raise_for_status()
                 return r.json()
-            except requests.RequestException:
+            except (requests.RequestException, ValueError):
                 if attempt == retries:
                     return None
                 time.sleep(attempt * 2)
         return None
-
-    def get_image(self, url):
-        try:
-            self._throttle(url.split('/')[2], 0.05)
-            r = self.session.get(url, timeout=30)
-            if r.ok and r.headers.get('Content-Type', '').startswith('image/'):
-                return r.content
-        except requests.RequestException:
-            pass
-        return None
-
 
 api = Api()
 
@@ -329,6 +332,17 @@ def product_external_url(appid, game_id=None):
     if game_id:
         return f'https://www.cheapshark.com/game/{game_id}/'
     return ''
+
+
+def safe_artwork_url(value):
+    value = (value or '').strip()
+    if not value:
+        return ''
+    try:
+        validate_artwork_url(value)
+    except ValidationError:
+        return ''
+    return value
 
 
 
@@ -479,7 +493,7 @@ def upsert_games(games, data_source, update_existing=True, on_progress=None):
         for p in to_create:
             url = steam_capsule_url(p.steam_app_id) if p.steam_app_id else None
             if not url:
-                url = thumb_by_name.get(p.name)
+                url = safe_artwork_url(thumb_by_name.get(p.name))
             if url:
                 images.append(ProductImage(product=p, external_url=url,
                                            alt_text=p.name, is_primary=True, sort_order=0))
@@ -612,7 +626,7 @@ def import_search_query(query):
                 if Decimal(str(d.get('normalPrice') or '0')) > 0:
                     if best is None or Decimal(str(d.get('savings') or 0)) > Decimal(str(best.get('savings') or 0)):
                         best = d
-            except Exception:
+            except (InvalidOperation, TypeError, ValueError):
                 continue
         game = _deal_to_game(best or deals[0])
         if game['name']:
@@ -719,10 +733,10 @@ def enrich_with_steam(products, limit=200, delay=0.65):
         if p.is_featured:
             existing = p.images.count()
             shots = (d.get('screenshots') or [])[:2]
-            imgs = [ProductImage(product=p, external_url=s.get('path_full'),
+            imgs = [ProductImage(product=p, external_url=safe_artwork_url(s.get('path_full')),
                                  alt_text=f'{p.name} screenshot {i + 1}',
                                  sort_order=existing + i)
-                    for i, s in enumerate(shots) if s.get('path_full')]
+                    for i, s in enumerate(shots) if safe_artwork_url(s.get('path_full'))]
             if imgs:
                 ProductImage.objects.bulk_create(imgs)
 
@@ -784,4 +798,3 @@ def steamspy_genre_apps(genre):
     """Top ~1000 apps in a SteamSpy genre. Returns {appid: name}."""
     return {appid: row.get('name', '')
             for appid, row in steamspy_genre_rows(genre).items()}
-

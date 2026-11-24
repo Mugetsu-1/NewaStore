@@ -25,6 +25,7 @@ from django.core.management.base import BaseCommand
 from django.db.models import Q
 
 from store.models import Product, ProductImage
+from store.artwork import probe_image_url
 
 STEAM_UA = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -48,15 +49,7 @@ CS_PAGE_SIZE = 40
 
 def check(url, headers=STEAM_UA):
     """True when the URL actually returns image bytes."""
-    try:
-        r = requests.get(url, headers=headers, timeout=12, stream=True,
-                         allow_redirects=True)
-        code = r.status_code
-        ctype = r.headers.get("Content-Type", "")
-        r.close()
-        return code in (200, 206) and ctype.startswith("image")
-    except requests.RequestException:
-        return False
+    return probe_image_url(url, timeout=12)
 
 
 def find_steam_art(appid):
@@ -157,7 +150,10 @@ class Command(BaseCommand):
             for i in range(0, len(game_ids), CS_PAGE_SIZE):
                 chunk = game_ids[i:i + CS_PAGE_SIZE]
                 try:
-                    r = requests.get(CS_API + ",".join(chunk), headers=CS_UA, timeout=25)
+                    r = requests.get(
+                        CS_API + ",".join(chunk), headers=CS_UA, timeout=25,
+                        allow_redirects=False,
+                    )
                     if r.status_code == 200:
                         for gid, obj in r.json().items():
                             thumb = (obj.get("info") or {}).get("thumb") or ""

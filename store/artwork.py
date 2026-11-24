@@ -15,11 +15,15 @@ import io
 import logging
 import threading
 import time
+import warnings
+from urllib.parse import urljoin
 
 import requests
 from django.conf import settings
 from django.core.files.base import ContentFile
 from PIL import Image
+
+from .security import validate_artwork_url
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +36,10 @@ STEAM_APPDETAILS = "https://store.steampowered.com/api/appdetails"
 APPDETAILS_MIN_INTERVAL = 1.0
 _last_appdetails_call = 0.0
 _appdetails_lock = threading.Lock()
+MAX_ARTWORK_BYTES = 8 * 1024 * 1024
+MAX_ARTWORK_PIXELS = 40_000_000
+MAX_REDIRECTS = 3
+ALLOWED_IMAGE_FORMATS = {"JPEG", "PNG", "WEBP", "GIF"}
 
 
 class ArtworkError(Exception):
@@ -53,20 +61,72 @@ def download_bytes(url, timeout=15):
     empty body) raises instead of returning, so callers can never store a
     URL/file that would render as a broken image.
     """
-    try:
-        r = requests.get(url, headers=STEAM_UA, timeout=timeout, stream=True,
-                         allow_redirects=True)
-        code = r.status_code
-        ctype = r.headers.get("Content-Type", "")
-        if code not in (200, 206) or not ctype.startswith("image"):
-            raise ArtworkError(f"HTTP {code} ({ctype or 'no content-type'})")
-        data = r.raw.read(8 * 1024 * 1024, decode_content=True)
-        r.close()
-        if not data:
-            raise ArtworkError("empty body")
-        return data
-    except requests.RequestException as exc:
-        raise ArtworkError(f"{type(exc).__name__}: {exc}") from exc
+    current = url
+    for _redirect in range(MAX_REDIRECTS + 1):
+        try:
+            validate_artwork_url(current)
+        except Exception as exc:
+            raise ArtworkError(f"blocked artwork URL: {exc}") from exc
+        try:
+            r = requests.get(
+                current, headers=STEAM_UA, timeout=timeout, stream=True,
+                allow_redirects=False,
+            )
+        except requests.RequestException as exc:
+            raise ArtworkError(f"{type(exc).__name__}: {exc}") from exc
+        try:
+            if r.status_code in (301, 302, 303, 307, 308):
+                location = r.headers.get("Location")
+                if not location:
+                    raise ArtworkError("redirect without Location")
+                current = urljoin(current, location)
+                continue
+            ctype = r.headers.get("Content-Type", "").lower()
+            try:
+                declared_size = int(r.headers.get("Content-Length", "0") or 0)
+            except ValueError:
+                declared_size = 0
+            if r.status_code not in (200, 206) or not ctype.startswith("image/"):
+                raise ArtworkError(
+                    f"HTTP {r.status_code} ({ctype or 'no content-type'})"
+                )
+            if declared_size > MAX_ARTWORK_BYTES:
+                raise ArtworkError("image exceeds the 8 MB download limit")
+            data = r.raw.read(MAX_ARTWORK_BYTES + 1, decode_content=True)
+            if len(data) > MAX_ARTWORK_BYTES:
+                raise ArtworkError("image exceeds the 8 MB download limit")
+            if not data:
+                raise ArtworkError("empty body")
+            return data
+        finally:
+            r.close()
+    raise ArtworkError("too many redirects")
+
+
+def probe_image_url(url, timeout=12):
+    """Safely verify that an approved URL resolves to an image response."""
+    current = url
+    for _redirect in range(MAX_REDIRECTS + 1):
+        try:
+            validate_artwork_url(current)
+            r = requests.get(
+                current, headers=STEAM_UA, timeout=timeout, stream=True,
+                allow_redirects=False,
+            )
+        except Exception:
+            return False
+        try:
+            if r.status_code in (301, 302, 303, 307, 308):
+                location = r.headers.get("Location")
+                if not location:
+                    return False
+                current = urljoin(current, location)
+                continue
+            ctype = r.headers.get("Content-Type", "").lower()
+            return r.status_code in (200, 206) and ctype.startswith("image/")
+        finally:
+            r.close()
+    return False
 
 
 def to_webp(data, max_width=None, quality=None):
@@ -74,7 +134,15 @@ def to_webp(data, max_width=None, quality=None):
     max_width = max_width or getattr(settings, "ARTWORK_THUMB_WIDTH", 480)
     quality = quality or getattr(settings, "ARTWORK_WEBP_QUALITY", 82)
     try:
-        with Image.open(io.BytesIO(data)) as im:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            im = Image.open(io.BytesIO(data))
+        with im:
+            if im.format not in ALLOWED_IMAGE_FORMATS:
+                raise ArtworkError("unsupported image format")
+            if im.width <= 0 or im.height <= 0 or im.width * im.height > MAX_ARTWORK_PIXELS:
+                raise ArtworkError("image dimensions exceed the safety limit")
+            im.load()
             im = im.convert("RGB")
             if im.width > max_width:
                 height = round(im.height * max_width / im.width)
@@ -191,13 +259,19 @@ def steam_header_image(appid):
             time.sleep(wait)
         _last_appdetails_call = time.monotonic()
     try:
-        r = requests.get(STEAM_APPDETAILS, params={"appids": appid, "l": "english"},
-                         headers=STEAM_UA, timeout=15)
+        r = requests.get(
+            STEAM_APPDETAILS, params={"appids": appid, "l": "english"},
+            headers=STEAM_UA, timeout=15, allow_redirects=False,
+        )
     except requests.RequestException as exc:
         raise ArtworkError(f"{type(exc).__name__}: {exc}") from exc
     if r.status_code != 200:
         raise ArtworkError(f"HTTP {r.status_code}")
-    entry = (r.json() or {}).get(str(appid))
+    try:
+        payload = r.json() or {}
+    except ValueError as exc:
+        raise ArtworkError("appdetails returned invalid JSON") from exc
+    entry = payload.get(str(appid))
     if entry is None:
         raise ArtworkError("appdetails returned no entry (rate-limited?)")
     if not entry.get("success"):
