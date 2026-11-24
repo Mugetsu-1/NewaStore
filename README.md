@@ -67,7 +67,7 @@ not retried on every startup.
 - **Guest checkout** and account checkout
 - Billing details collected at checkout and stored on the order for invoices
 - Automatic **tax calculation**
-- Payment methods: **eSewa and Nay Bank Transfer**. By default eSewa runs in **sandbox** mode (`ESEWA_SIMULATE`, auto-on for the public `EPAYTEST` code): choosing eSewa opens an **in-site gateway page** that either completes the order (it then appears under **My Orders**) or takes you back to the store — no off-site redirect and no real money. With **live** credentials (or `ESEWA_SIMULATE=False`) it uses the official eSewa ePay v2 flow with server-side HMAC-SHA256 callback verification. Nay Bank is an offline bank transfer settled manually.
+- Payment methods: **eSewa and Nay Bank Transfer**. The development example uses eSewa's public **EPAYTEST** sandbox through the official hosted RC page (no real money). `ESEWA_SIMULATE=True` enables an in-site demo only while `DEBUG=True`; production refuses to start with simulation enabled. Live callbacks require a full HMAC-SHA256 signature, matching order/product/amount, a unique gateway transaction, and (by default in production) server-to-server status verification. Nay Bank is settled manually by an admin with the dedicated settlement permission.
 - Order confirmation + status emails
 
 ### Orders
@@ -80,8 +80,8 @@ not retried on every startup.
 
 ### Accounts
 
-- Registration, login (username **or** email), logout
-- **Validated sign-up & profile** — email must be a real **Gmail** address (`@gmail.com`); phone must be a **Nepali mobile** number (NTC / Ncell / Smart Cell: 10 digits starting `98`, `97` or `96`, with an optional `+977` country code); passwords use Django's standard strength validators. The same Gmail/Nepali-mobile rules apply at checkout, contact and newsletter sign-up, shown as inline field hints with live popups client-side and enforced server-side.
+- Registration with signed email verification, login (username **or** email), logout; Argon2 password hashing and database-backed brute-force lockout
+- **Validated identity and checkout** — sign-up requires a verified **Gmail** address (`@gmail.com`), and the verified login email cannot be silently replaced from the profile form. Checkout phone numbers must be Nepali mobile numbers (10 digits starting `98`, `97` or `96`, optional `+977`). Gmail validation also applies to contact/newsletter forms; all rules are enforced server-side.
 - Password reset flow
 - Dashboard with order/wishlist stats
 - Profile editing, password change
@@ -108,7 +108,7 @@ not retried on every startup.
 
 ## Quick Start
 
-> Requires **Python 3.10+** and **PostgreSQL 14+** (service running; see `.env.example`).
+> Requires **Python 3.12+** and **PostgreSQL 14+** (service running; see `.env.example`).
 
 ```bash
 # 0. Create and activate a virtual environment
@@ -130,7 +130,7 @@ copy .env.example .env       # Windows
 # Edit .env and set database, email, and payment values as needed.
 
 # 3. Install dependencies
-python -m pip install -r requirements.txt
+python -m pip install --require-hashes -r requirements.lock
 
 # 4. Run it. That's all - the server bootstraps itself on startup.
 python manage.py runserver
@@ -171,18 +171,18 @@ DB_PORT=5433
 
 ### Accounts & first login
 
-The dev server seeds two accounts on startup from your `.env` (see
-`.env.example`), and resets their passwords to match on every boot, so login
-always agrees with `.env`:
+Create administrators explicitly; there are **no default credentials**:
 
-| Role     | URL         | Username source              | Password source                |
-|----------|-------------|------------------------------|--------------------------------|
-| Admin    | `/admin/`   | `DJANGO_SUPERUSER_USERNAME`  | `DJANGO_SUPERUSER_PASSWORD`    |
-| Customer | `/login/`   | `DEMO_USER_USERNAME`         | `DEMO_USER_PASSWORD`           |
+```bash
+python manage.py createsuperuser
+```
 
-Set these in `.env` before first run (defaults are `admin` / `demo`). The demo
-customer is skipped if `DEMO_USER_PASSWORD` is left blank. Change every
-credential before deploying to production.
+For disposable local environments only, set `BOOTSTRAP_ACCOUNTS=True` and all
+`DJANGO_SUPERUSER_*` values. `ensure_ready` then creates a missing account once.
+It never resets an existing password and never elevates an existing user. Keep
+bootstrapping disabled in production. The admin path defaults to `/admin/` and
+can be changed with `DJANGO_ADMIN_PATH`; `DJANGO_ADMIN_ALLOWED_NETWORKS` can
+restrict it to explicit IP/CIDR ranges.
 
 ---
 
@@ -190,9 +190,10 @@ credential before deploying to production.
 
 ```bash
 python manage.py test                          # run Django's test suite
-python test_checkout.py                         # exercise the checkout flow against the configured database
+NEWASTORE_ALLOW_DB_TEST_SCRIPTS=1 python test_checkout.py  # isolated staging DB only
 python manage.py createsuperuser               # create your own admin
 python manage.py collectstatic                 # gather static files (production)
+python manage.py expire_pending_orders         # release overdue unpaid reservations
 
 # --- data pipeline (all of this also runs automatically on runserver) ---
 python manage.py ensure_ready                  # migrations + import + repair + audit
@@ -208,7 +209,7 @@ python manage.py classify_catalog --dry-run    # preview which imported rows are
 python manage.py classify_catalog              # move non-game software into the "Applications" category
 python manage.py rank_catalog --dry-run        # preview popularity tiers (SteamSpy owners + curated AAA)
 python manage.py rank_catalog                  # tier by real popularity and feature the top games
-python verify_all.py                           # end-to-end health check against the configured database
+NEWASTORE_ALLOW_DB_TEST_SCRIPTS=1 python verify_all.py      # isolated staging DB only
 ```
 
 ---
@@ -290,13 +291,21 @@ Transactional flows that use it: welcome (on signup), password reset, order conf
 
 - Set `DJANGO_DEBUG=False` and generate a unique, high-entropy
   `DJANGO_SECRET_KEY`.
-- Replace all demo usernames and passwords, including the admin account.
+- Create named administrator accounts, disable `BOOTSTRAP_ACCOUNTS`, enable MFA
+  at the identity/reverse-proxy layer where available, and optionally IP-limit
+  the admin surface.
 - Use production credentials for PostgreSQL, SMTP, and the eSewa gateway. Do not
   place them in source control.
 - Restrict `DJANGO_ALLOWED_HOSTS` and configure `SITE_BASE_URL` to the HTTPS
   hostname used by the deployment.
+- Set `DJANGO_CSRF_TRUSTED_ORIGINS` only when additional trusted HTTPS origins
+  are genuinely required. Trust forwarded headers only behind a trusted proxy.
 - Swap eSewa's RC sandbox product code/secret/URLs for live values and set
-  `ESEWA_SIMULATE=False` before accepting real payments.
+  `ESEWA_SIMULATE=False` and `ESEWA_VERIFY_STATUS=True` before accepting money.
+- Use a least-privilege PostgreSQL role without superuser/CREATEROLE/CREATEDB,
+  require TLS, encrypt backups, and restrict backup file permissions.
+- Run `python -m pip_audit -r requirements.lock --require-hashes`, `python -m bandit -q -r newastore store`,
+  `python manage.py test store`, and `python manage.py check --deploy`.
 - Run migrations and `collectstatic` as part of deployment; do not use the
   development server in production.
 
@@ -309,15 +318,22 @@ Key settings can be overridden via environment variables:
 | `DJANGO_SECRET_KEY` | Secret key (set in production) |
 | `DJANGO_DEBUG` | `False` in production |
 | `DJANGO_ALLOWED_HOSTS` | Comma-separated host list |
-| `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT` | PostgreSQL connection |
+| `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `DB_SSLMODE` | PostgreSQL connection (TLS required in production) |
 | `DJANGO_EMAIL_BACKEND` | Email backend (defaults to console) |
 | `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD` | SMTP |
 | `ESEWA_PRODUCT_CODE`, `ESEWA_SECRET_KEY`, `ESEWA_FORM_URL`, `ESEWA_STATUS_URL` | eSewa ePay v2 (defaults to the public RC sandbox) |
-| `ESEWA_SIMULATE` | `auto` (default): in-site sandbox gateway when the product code is `EPAYTEST`, real eSewa flow otherwise. Force with `True`/`False` |
+| `ESEWA_SIMULATE` | Development-only in-site demo. Production rejects `True`. |
+| `ESEWA_VERIFY_STATUS` | Require server-to-server eSewa status confirmation (defaults on in production) |
+| `ESEWA_ORDER_TTL_MINUTES`, `BANK_TRANSFER_ORDER_TTL_HOURS` | Maximum unpaid stock/coupon reservation period |
+| `BANK_TRANSFER_ENABLED`, `BANK_TRANSFER_*` | Enable offline transfer only after supplying verified production account details |
+| `DJANGO_ADMIN_PATH` | Optional admin URL segment (default `admin`) |
+| `DJANGO_ADMIN_ALLOWED_NETWORKS` | Optional comma-separated admin IP/CIDR allow-list |
+| `BOOTSTRAP_ACCOUNTS` | Explicit one-time local account creation; leave false in production |
 | `SITE_BASE_URL` | Absolute base URL used in transactional emails |
 | `USD_TO_NPR` | USD→NPR rate used by importers (default: 135) |
 | `ARTWORK_THUMB_WIDTH` | Width of generated local WebP thumbnails (default: 616) |
 | `ARTWORK_WEBP_QUALITY` | WebP quality for generated thumbnails (default: 82) |
+| `ENABLE_LIVE_SEARCH_IMPORT` | Allow zero-result searches to write imported products (defaults off in production) |
 
 By default email is printed to the console, so order confirmation and password
 reset emails can be viewed in the terminal during development.
@@ -339,7 +355,7 @@ third-party analytics script is loaded when the field is blank.
 3. Configure SMTP email credentials.
 4. Configure the live eSewa product code + secret, swap the RC sandbox URLs
    (`ESEWA_FORM_URL`, `ESEWA_STATUS_URL`) for production and set
-   `ESEWA_SIMULATE=False`, then update the Nay Bank account details in
+   `ESEWA_SIMULATE=False` and `ESEWA_VERIFY_STATUS=True`, then update the Nay Bank account details in
    `store/payments.py` (`BANK_TRANSFER_DETAILS`).
 5. Add WhiteNoise (already in `requirements.txt`) or a reverse proxy for static/media.
 6. Run `python manage.py collectstatic`.

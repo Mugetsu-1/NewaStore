@@ -1,122 +1,177 @@
-# Security Policy
+# Security Policy and Hardening Notes
 
-NewaStore is a Django + PostgreSQL e-commerce application. This document
-describes the security controls that are implemented in the codebase, the
-residual gaps that remain, and a manual test matrix (T1–T12) for verifying the
-controls. It is written to be **honest about what is and is not enforced** so
-the posture can be assessed accurately before any production deployment.
+NewaStore is a Django/PostgreSQL storefront. Security reports should be sent
+privately to **newastore8@gmail.com** with reproduction steps and affected
+endpoints. Do not publish an unpatched vulnerability in a public issue.
 
-> **Money movement:** The eSewa gateway ships in **sandbox** mode. By default
-> (`ESEWA_SIMULATE`, auto-on for the public `EPAYTEST` product code) it completes
-> the order on a **local in-site gateway page** — no external round-trip and no
-> real funds. Supplying **live** eSewa credentials (or setting `ESEWA_SIMULATE=False`)
-> switches to the official eSewa ePay v2 flow with HMAC-SHA256 callback
-> verification. Nay Bank Transfer settles offline. Swap in live credentials and
-> production URLs — and complete the production checklist in `README.md` — before
-> accepting real payments.
+No review can guarantee that an application is free of every vulnerability.
+The controls below describe what this repository enforces and what still must
+be handled by the deployment platform.
 
-## Reporting a vulnerability
+## Implemented controls
 
-Report suspected vulnerabilities privately to **<newastore8@gmail.com>**. Please
-include reproduction steps and affected endpoints. Do not open a public issue
-for an unpatched vulnerability. As a coursework/portfolio project there is no
-formal SLA, but reports are triaged on a best-effort basis.
+### Authentication and administration
 
-## Threat model (summary)
+- Passwords use Argon2id for new hashes, with Django's PBKDF2 hashers retained
+  only for transparent migration of existing accounts.
+- Password policy includes similarity, common/numeric-password checks and a
+  12-character minimum.
+- Username/email login fails closed if an identifier is ambiguous. PostgreSQL
+  case-insensitive unique indexes protect usernames and non-empty emails.
+- New accounts remain inactive until a signed, time-limited link proves control
+  of the email address. The link opens a CSRF-protected POST confirmation so
+  automated email scanners cannot activate accounts merely by fetching it.
+  Resend responses do not reveal whether an account exists.
+- The self-service profile form cannot replace the verified login email without
+  a new verification workflow; it only updates non-security identity fields.
+- Failed authentication is throttled in PostgreSQL by hashed IP and
+  IP/identifier keys. Raw attempted identifiers and IPs are not stored in the
+  throttle table.
+- There are no source-code or startup default admin credentials.
+  `ensure_ready` creates accounts only with explicit
+  `BOOTSTRAP_ACCOUNTS=True`, creates them once, and never resets/elevates an
+  existing account.
+- The admin path is configurable (`DJANGO_ADMIN_PATH`) and can be restricted
+  to IP/CIDR ranges (`DJANGO_ADMIN_ALLOWED_NETWORKS`). Hiding the URL is only a
+  noise-reduction measure; authorization and throttling remain mandatory.
+- Payment state is read-only in ordinary order admin forms. Bank settlement is
+  a dedicated permission/action and paid fulfillment is database-constrained.
 
-- **Assets:** customer accounts and PII, order records, admin access, payment
-  fulfillment integrity, transactional email, seeded catalog data.
-- **Primary adversaries:** unauthenticated internet users, authenticated
-  customers attempting privilege escalation or cross-account access (IDOR), and
-  actors forging payment callbacks to obtain goods without paying.
-- **Out of scope:** the security of the upstream sandbox gateways themselves,
-  the host OS/network, and third-party data-source APIs (CheapShark/Steam).
+### Authorization and object access
 
-## A. Security control matrix
+- Account, order, invoice, wishlist, review and profile mutations enforce
+  per-user ownership.
+- Guest checkout orders are bound to the browser session that created them.
+  Knowing an order number alone cannot open success/failure/payment pages.
+- New order numbers contain a full 128-bit random UUID (32 hexadecimal digits),
+  rather than a short enumerable identifier.
+- Mutations use POST and Django CSRF protection. Logout is POST-only.
+- Customer cancellation cannot cancel a paid order. Unpaid cancellation is
+  locked and idempotently restores inventory and coupon usage.
 
-Status legend: **✅ Implemented** · **🟡 Partial** · **⛔ Gap** (see §B).
+### Payment integrity
 
-| # | Control | Implementation (Django) | Status | Evidence |
-|---|---------|-------------------------|--------|----------|
-| 1 | Authentication | Session auth; username **or** email login via a custom backend; PBKDF2 password hashing (Django default) | ✅ | `store/backends.py` (`EmailOrUsernameModelBackend`); `AUTHENTICATION_BACKENDS` in `newastore/settings.py` |
-| 2 | Password policy | 4 validators: user-attribute similarity, min length, common-password, numeric-only | ✅ | `AUTH_PASSWORD_VALIDATORS` in `newastore/settings.py` |
-| 3 | Authorization / IDOR | Per-object ownership checks return `Http404` when `order.user != request.user and not is_staff`; account views require login; admin is staff-only | ✅ | `order_detail`, `download_invoice`, `cancel_order`, `reorder` in `store/views.py` |
-| 4 | CSRF protection | `CsrfViewMiddleware` active; `{% csrf_token %}` in all POST forms; DRF session auth enforces CSRF; `CSRF_COOKIE_SAMESITE='Lax'` | ✅ | `MIDDLEWARE`, cookie flags in `newastore/settings.py` |
-| 5 | XSS prevention | Django template auto-escaping on all rendered context | 🟡 | templates under `store/templates/`; see §B (no CSP) |
-| 6 | SQL injection prevention | Django ORM parameterizes all queries; no raw string-interpolated SQL | ✅ | `store/views.py`, `store/models.py` (ORM `filter`/`Q`) |
-| 7 | Clickjacking | `XFrameOptionsMiddleware` + `X_FRAME_OPTIONS='DENY'` | ✅ | `newastore/settings.py` |
-| 8 | Transport security (HTTPS/HSTS) | When `DEBUG=False`: `SECURE_SSL_REDIRECT`, HSTS 1 year with `includeSubDomains` + preload, `SECURE_PROXY_SSL_HEADER` for TLS-terminating proxies | ✅ (prod) | `if not DEBUG:` block in `newastore/settings.py` |
-| 9 | Secure cookies | `SESSION_COOKIE_HTTPONLY=True`, `SESSION_COOKIE_SAMESITE`/`CSRF_COOKIE_SAMESITE='Lax'` always; `SESSION_COOKIE_SECURE`/`CSRF_COOKIE_SECURE` when `DEBUG=False` | ✅ | `newastore/settings.py` |
-| 10 | Secrets management | Secrets read from environment/`.env`; `.env` is git-ignored and untracked; `SECRET_KEY` **raises** `ImproperlyConfigured` if unset while `DEBUG=False`; no usable secret literals in source | ✅ | `SECRET_KEY` guard in `newastore/settings.py`; `.gitignore` |
-| 11 | Security headers | `SECURE_CONTENT_TYPE_NOSNIFF`, `SECURE_REFERRER_POLICY='same-origin'`, `X_FRAME_OPTIONS='DENY'`, legacy `SECURE_BROWSER_XSS_FILTER` | ✅ | `newastore/settings.py` |
-| 12 | Payment integrity | Two modes. **Live** (or `ESEWA_SIMULATE=False`): server-side verification of the eSewa redirect callback — HMAC-SHA256 signature check over the returned fields + status + amount, with idempotent fulfillment via `mark_order_paid`. **Public EPAYTEST sandbox** (`ESEWA_SIMULATE` on by default): a local in-site gateway confirms the order on a CSRF-protected POST — no external round-trip, no signature to verify, no real funds. Nay Bank Transfer is settled manually by an admin after verifying the deposit | ✅ | `store/payments.py` (`verify_esewa_signature`); `esewa_checkout`/`esewa_verify` in `store/views.py`; `ESEWA_SIMULATE` in `newastore/settings.py` |
-| 13 | Rate limiting / DoS | DRF throttling: anonymous **120/min**, contact endpoint **5/min** | 🟡 | `REST_FRAMEWORK` throttle config in `newastore/settings.py`; HTML login unthrottled — see §B |
-| 14 | Error handling / info disclosure | `DEBUG` defaults to **False**; custom 404/500 pages; startup config guard prevents booting insecurely in prod | ✅ | `DEBUG` default + `SECRET_KEY` guard in `newastore/settings.py`; `newastore/urls.py` handlers |
-| 15 | Input validation | Django forms + model validation on all mutations, including Gmail-only email and Nepali mobile-number format validators shared across sign-up, profile, checkout, contact and newsletter; DRF serializers on the JSON API; user image uploads use `ImageField` (Pillow-validated) | 🟡 | `store/validators.py`, `store/forms.py`, `store/models.py`; upload size/MIME allowlist — see §B |
-| 16 | Dependency management | Version-floored, actively maintained packages | 🟡 | `requirements.txt`; no automated CVE scanning — see §B |
-| 17 | Audit trail | Immutable order line items; `OrderStatusHistory` records every status change; failed email sends are logged, not silently dropped | 🟡 | `Order`/`OrderStatusHistory` in `store/models.py`; `store/utils.py`; no auth-failure/security event log — see §B |
+- eSewa callbacks have a bounded payload and strict base64/JSON parsing.
+- The HMAC must cover the complete expected eSewa response field set. The
+  product code, order number, payment method, status and exact decimal amount
+  must all match.
+- Production defaults to server-to-server status verification through the
+  official eSewa HTTPS endpoint (`ESEWA_VERIFY_STATUS=True`).
+- Gateway transaction IDs are unique at the database layer. Fulfillment locks
+  the order, is idempotent, and sends email only after commit.
+- Invalid/forged callbacks never change an order to `failed` or `paid`.
+- In-site eSewa simulation is permitted only with `DEBUG=True`; production
+  configuration fails closed if simulation is enabled.
+- A cancelled/refunded order cannot later be auto-fulfilled by a racing return
+  callback.
+- Placeholder bank details are development-only; production leaves offline bank
+  transfer disabled until explicit account settings are supplied.
 
-## B. Residual gaps and roadmap
+### Checkout and database integrity
 
-These are known limitations, kept deliberately out of scope for a pragmatic
-coursework build. Each should be revisited before a real production launch.
+- Checkout locks the cart, products, variants and coupon before recomputing all
+  prices, stock, tax and discounts on the server.
+- Quantities are limited to 1–99 and inventory is checked again under lock.
+  Concurrent duplicate submissions cannot create a second order from the same
+  cart.
+- Unpaid stock/coupon reservations expire automatically (with a bounded lazy
+  sweep and `expire_pending_orders` command), preventing abandoned checkouts
+  from exhausting inventory indefinitely.
+- Coupon usage limits are serialized, product/category scopes and exclusions
+  are enforced, and cancelled usage is released.
+- PostgreSQL constraints reject negative prices/totals, invalid discounts,
+  invalid ratings/quantities, duplicate nullable cart/wishlist rows, duplicate
+  payment references, and fulfillment states without payment.
+- Production `DATABASE_URL` connections require TLS. Production startup also
+  requires a database password when a URL is not used.
+- Application queries use the Django ORM; the only direct SQL in request code
+  is a constant `SELECT 1` health probe.
 
-- **No login brute-force lockout.** The DRF throttles cover the JSON API only;
-  the HTML `/login/` view has no per-account or per-IP lockout. Mitigation for
-  production: add `django-axes` (or an equivalent) and/or reverse-proxy rate
-  limiting.
-- **No Content-Security-Policy header.** Template auto-escaping is the primary
-  XSS defense; there is no CSP to contain a bypass. Mitigation: add
-  `django-csp` with a nonce-based policy.
-- **Upload hardening.** Image fields are validated as images by Pillow, but
-  there is no explicit maximum file size or MIME allowlist beyond Django's
-  defaults, and uploaded media is served from `MEDIA_ROOT` without a separate
-  sandboxed domain.
-- **No MFA for admin.** Admin access is single-factor (password). Consider MFA
-  and IP allow-listing for the admin surface in production.
-- **Secrets at rest.** Development secrets live in `.env` on disk. Production
-  should source secrets from a managed secret store, not a file.
-- **`CSRF_COOKIE_HTTPONLY` is left at Django's default (False)** so the AJAX
-  layer can read the CSRF token. This is standard and acceptable; documented
-  here for completeness.
-- **No automated dependency/CVE scanning** in CI (e.g. `pip-audit`,
-  Dependabot). Versions are floored but not continuously monitored.
+### Browser and input security
 
-## C. Manual test matrix (T1–T12)
+- Django template auto-escaping remains enabled.
+- Public pages receive a nonce-based Content Security Policy with no
+  `unsafe-inline` scripts, plus frame denial, object/base restrictions,
+  constrained form targets, Permissions Policy, COOP, CORP, nosniff and strict
+  referrer headers.
+- The dynamic Tailwind CDN runtime was removed. The remaining versioned
+  Font Awesome stylesheet has Subresource Integrity and CORS metadata.
+- Search suggestions and toast messages build DOM nodes with `textContent`;
+  third-party/imported product names are never interpolated into `innerHTML`.
+- External-return convenience redirects validate the host and scheme, removing
+  Referer-based open redirects.
+- Public forms have length bounds and abuse throttles. Contact subjects reject
+  header line breaks. API filters validate decimal ranges and sort allow-lists.
+- CSV exports prefix spreadsheet-formula cells.
+- Uploaded images are extension/MIME/size limited. Remote artwork has byte,
+  pixel and format limits.
 
-Run against a development/staging database only. Many rows have **automated
-coverage** in `store/tests.py` (76 tests) and `verify_all.py` (end-to-end
-route/checkout/admin/config checks); those are noted per row. Rows without automated coverage rely on the
-named framework control and should be spot-checked manually.
+### Outbound connections and SSRF
 
-| ID | Scenario | Steps | Expected result | Automated coverage |
-|----|----------|-------|-----------------|--------------------|
-| T1 | Authentication | Log in with a valid **username**, then with the same account's **email**; then a wrong password | Both valid forms succeed; wrong password is rejected | `verify_all.py` (`login works`); backend `store/backends.py` |
-| T2 | Password policy | Register with `password`, `12345678`, and a 4-char password | Each is rejected with a validation error | Framework (`AUTH_PASSWORD_VALIDATORS`); manual |
-| T3 | Session / logout | Log in, confirm session cookie, log out | Session is invalidated; protected pages redirect to login | Manual; cookie flags in `newastore/settings.py` |
-| T4 | Authorization / IDOR | As user A, request user B's `/orders/<n>/` and `/orders/<n>/invoice/` | `404` (no cross-account disclosure) | `store/views.py` ownership checks; manual cross-account check |
-| T5 | Admin access control | Request `/admin/` anonymously; load storefront as anon, customer, and staff | Anonymous `/admin/` → redirect to login; admin links render only for staff | `verify_all.py` §5 (anon redirect, staff-only links, no links for shopper) |
-| T6 | CSRF | POST to `/checkout/` (or add-to-cart) omitting the CSRF token | Rejected with `403 Forbidden` | Framework (`CsrfViewMiddleware`); manual |
-| T7 | Stored/reflected XSS | Submit `<script>alert(1)</script>` in a review, contact message, and search query | Rendered escaped as text; no script executes | Framework (template auto-escaping); manual |
-| T8 | SQL injection | Search for `' OR 1=1 --` and `"; DROP TABLE store_product; --` | Treated as a literal query; no error, no injection | Framework (ORM parameterization); manual |
-| T9 | eSewa signature integrity (live mode) | With `ESEWA_SIMULATE=False`, complete checkout via eSewa; replay the callback with a **tampered `total_amount`**; replay a **valid** signed callback twice | Tampered/forged callback → order stays unpaid, redirect to payment-failed; valid callback → paid + confirmed; second valid callback is idempotent | `store/tests.py` (`RealGatewayTests`, pinned `ESEWA_SIMULATE=False`); `verify_all.py` §4 |
-| T9b | eSewa sandbox in-site gateway | With the default sandbox (`ESEWA_SIMULATE` on), reach the eSewa step, confirm it renders in-site (no external redirect) with a back-to-store link, then pay | Gateway page stays on-site and leaves the order pending until paid; paying marks it paid/confirmed and it appears under My Orders; paying twice is idempotent | `store/tests.py` (`SandboxGatewayTests`) |
-| T10 | Payment method availability / offline settlement | Load `/checkout/` with eSewa unconfigured; place a Nay Bank Transfer order and confirm it is not fulfilled until an admin verifies the deposit | eSewa still lists but is disabled when unconfigured; a Nay Bank order stays `pending`/unpaid until an admin marks it paid (no self-service fulfillment) | `store/tests.py`; `verify_all.py` §4 |
-| T11 | Transport / headers | Set `DEBUG=False` and request over HTTP behind the proxy header | Redirects to HTTPS; responses carry HSTS, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin` | `newastore/settings.py` prod block; manual with `curl -I` |
-| T12 | Secrets / config hygiene | Inspect `git status`/`git ls-files`; unset `DJANGO_SECRET_KEY` with `DEBUG=False` | `.env` is untracked; boot **fails** (`ImproperlyConfigured`) rather than using an insecure key; `DEBUG` defaults to False | `newastore/settings.py` guards; `verify_all.py` config section; manual `git ls-files` |
+- The artwork downloader permits HTTPS only, rejects credentials/nonstandard
+  ports, and allows only explicit Steam CDN hosts.
+- Every redirect target is revalidated and redirect depth is bounded.
+- Artwork URLs are validated when saved and again before server-side fetching
+  or browser rendering. Localhost, private/cloud-metadata addresses and
+  arbitrary hosts are rejected.
+- eSewa endpoint settings must be HTTPS URLs under the official
+  `esewa.com.np` domain.
+- CheapShark, Steam and SteamSpy API calls use fixed application-owned URLs and
+  finite timeouts.
 
-## D. Running the security-relevant tests
+### Secrets, dependencies and observability
+
+- `.env`, SQL dumps, logs, generated media and bootstrap state are ignored by
+  Git. Repository history contains no tracked `.env` or database dump.
+- Production rejects missing/short/insecure Django keys, wildcard hosts,
+  non-HTTPS site URLs and unsafe payment simulation.
+- Direct and transitive deployment dependencies are version/hash-pinned. GitHub CI runs tests, Django deploy
+  checks, Bandit and `pip-audit`; Dependabot monitors pip and Actions updates.
+- Security/authentication events are logged without raw login identifiers.
+- The bundled Gunicorn access format omits URLs so email-verification and
+  password-reset tokens are not copied into application access logs.
+- Sensitive pages use `Cache-Control: no-store`.
+
+## Deployment responsibilities and residual risk
+
+The following cannot be completed solely in this repository:
+
+1. **Rotate exposed or reused credentials.** Revoke and replace SMTP app
+   passwords, database passwords, Django keys, admin/demo passwords and live
+   payment secrets whenever they may have been shared. Code changes cannot
+   revoke credentials at their providers.
+2. **Use MFA for administrators.** Enforce MFA through an identity-aware proxy,
+   VPN/SSO layer, or a reviewed Django MFA integration. IP allow-listing is
+   useful but is not MFA.
+3. **Use edge rate limiting.** HTML/API defense-in-depth limits use Django's
+   cache and authentication lockout uses PostgreSQL. Multi-instance deployments
+   should also use a shared Redis cache and reverse-proxy/WAF limits.
+4. **Protect PostgreSQL and backups.** Use a role without superuser,
+   CREATEROLE or CREATEDB in production; restrict network access; require TLS;
+   enable provider encryption, encrypted backups, retention/deletion policy and
+   restore testing. Database dumps contain password hashes and customer PII.
+5. **Separate untrusted media.** A dedicated object-storage/media domain and
+   malware scanning are recommended if public file uploads are added. Current
+   validation is not an antivirus engine.
+6. **Admin CSP compatibility.** The public site is nonce-strict. Jazzmin/Django
+   admin still requires trusted inline initialization, so its admin-specific
+   CSP permits inline script; admin access controls therefore remain critical.
+7. **Monitor and patch continuously.** A clean dependency scan is a point-in-
+   time result. Keep scheduled CI/Dependabot enabled and review advisories.
+
+## Verification
+
+Run against a development or staging database:
 
 ```bash
-python manage.py test store          # unit/integration tests (payments, auth, IDOR)
-python verify_all.py                 # end-to-end checks (routes, checkout, admin)
-python manage.py check --deploy      # audit production security settings (run with DEBUG=False)
+python manage.py test store
+python manage.py check
+python manage.py check --deploy          # with production-like environment
+python -m pip_audit -r requirements.lock --require-hashes
+python -m bandit -q -r newastore store -x store/migrations,store/tests.py
 ```
 
-## E. Before production
-
-Complete the **Security before production** and **Going to production**
-checklists in `README.md`: set `DJANGO_DEBUG=False`, generate a unique
-`DJANGO_SECRET_KEY`, restrict `DJANGO_ALLOWED_HOSTS`, rotate every demo
-credential, install live eSewa credentials, and serve
-behind HTTPS. Then close the §B gaps appropriate to your risk tolerance.
+The Django suite includes regression tests for guest-order IDOR, forged payment
+callbacks, signed-field validation, stock restoration, cart bounds, open
+redirects, CSP/security headers, SSRF URL rejection, one-vote-per-user review
+integrity, authentication lockout and safe account bootstrapping.
