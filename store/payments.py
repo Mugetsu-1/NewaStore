@@ -1,27 +1,34 @@
 """Payment gateway integration layer (eSewa + Nay Bank Transfer).
 
 Keeps raw HTTP/crypto calls out of views so the checkout and callback handlers
-stay thin and unit-testable. eSewa degrades gracefully when it is not configured
-(empty keys in settings); Nay Bank Transfer settles offline and is always on.
+stay thin and unit-testable. Payment methods fail closed when their required
+production configuration is absent.
 """
 
 import base64
 import hashlib
 import hmac
+from decimal import Decimal, InvalidOperation
 
+import requests
 from django.conf import settings
 
 
 def is_esewa_configured():
-    return bool(settings.ESEWA_PRODUCT_CODE and settings.ESEWA_SECRET_KEY)
+    return bool(
+        settings.ESEWA_PRODUCT_CODE
+        and settings.ESEWA_SECRET_KEY
+        and settings.ESEWA_FORM_URL
+        and settings.ESEWA_STATUS_URL
+    )
 
 
 BANK_TRANSFER_DETAILS = {
-    'bank_name': 'Nay Bank',
-    'account_name': 'NewaStore Pvt. Ltd.',
-    'account_number': '0123456789012',
-    'branch': 'Kathmandu — New Road',
-    'swift': 'NAYBNPKA',
+    'bank_name': settings.BANK_TRANSFER_BANK_NAME,
+    'account_name': settings.BANK_TRANSFER_ACCOUNT_NAME,
+    'account_number': settings.BANK_TRANSFER_ACCOUNT_NUMBER,
+    'branch': settings.BANK_TRANSFER_BRANCH,
+    'swift': settings.BANK_TRANSFER_SWIFT,
     'instructions': (
         'Transfer the exact order total to the account below, then reply to your '
         'order confirmation email with the deposit slip. Your order is confirmed '
@@ -80,23 +87,62 @@ def verify_esewa_signature(data):
     signs the exact string values it returns, so the signed message is rebuilt
     verbatim from the response's own ``signed_field_names`` order.
     """
-    field_names = [f.strip() for f in data.get('signed_field_names', '').split(',') if f.strip()]
-    if not field_names:
+    if not isinstance(data, dict):
+        return False
+    field_names = [f.strip() for f in str(data.get('signed_field_names', '')).split(',') if f.strip()]
+    required = {
+        'transaction_code', 'status', 'total_amount', 'transaction_uuid',
+        'product_code', 'signed_field_names',
+    }
+    if len(field_names) != len(set(field_names)) or set(field_names) != required:
+        return False
+    if any(not isinstance(data.get(name), str) for name in required):
         return False
     message = ','.join(f'{name}={data.get(name, "")}' for name in field_names)
     expected = _esewa_signature(message)
-    return hmac.compare_digest(expected, data.get('signature', ''))
+    supplied = data.get('signature', '')
+    return isinstance(supplied, str) and hmac.compare_digest(expected, supplied)
+
+
+def verify_esewa_status(order):
+    """Confirm a callback against eSewa's server-to-server status endpoint."""
+    if not getattr(settings, 'ESEWA_VERIFY_STATUS', False):
+        return True
+    try:
+        response = requests.get(
+            settings.ESEWA_STATUS_URL,
+            params={
+                'product_code': settings.ESEWA_PRODUCT_CODE,
+                'total_amount': f'{order.total:.2f}',
+                'transaction_uuid': order.order_number,
+            },
+            timeout=10,
+            allow_redirects=False,
+        )
+        if response.status_code != 200:
+            return False
+        payload = response.json()
+        if not isinstance(payload, dict):
+            return False
+        amount = Decimal(str(payload.get('total_amount', '0')).replace(',', ''))
+    except (requests.RequestException, ValueError, TypeError, InvalidOperation):
+        return False
+    return (
+        payload.get('status') == 'COMPLETE'
+        and payload.get('transaction_uuid') == order.order_number
+        and payload.get('product_code') == settings.ESEWA_PRODUCT_CODE
+        and amount == order.total.quantize(Decimal('0.01'))
+    )
 
 
 def available_payment_methods():
     """Checkout radio choices as (value, label, disabled) tuples.
 
-    eSewa disables itself when unconfigured so the checkout UI still lists it.
-    Nay Bank Transfer settles offline and is always available.
+    Unconfigured methods are omitted from the server-validated form choices.
     """
     return [
         ('esewa', 'eSewa', not is_esewa_configured()),
-        ('nay_bank', 'Nay Bank Transfer', False),
+        ('nay_bank', 'Nay Bank Transfer', not settings.BANK_TRANSFER_ENABLED),
     ]
 
 

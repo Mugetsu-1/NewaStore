@@ -10,6 +10,7 @@ Endpoints:
 """
 
 from django.core.cache import cache
+from django.conf import settings
 from django.db import connection
 from django.db.models import Q, Count
 from django.shortcuts import get_object_or_404
@@ -18,26 +19,18 @@ from rest_framework import serializers
 from rest_framework.decorators import api_view, throttle_classes
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
-from rest_framework.throttling import SimpleRateThrottle
+from decimal import Decimal, InvalidOperation
 
 from .models import Product, Tag, SiteSettings
 from .forms import ContactForm
 from .utils import send_templated_email
+from .throttles import ContactRateThrottle
 
 
 class APIPagination(PageNumberPagination):
     page_size = 24
     page_size_query_param = 'page_size'
     max_page_size = 100
-
-
-class ContactRateThrottle(SimpleRateThrottle):
-    """Limits POST /api/contact/ to 5/min/IP (rate defined in REST_FRAMEWORK)."""
-    scope = 'contact'
-
-    def get_cache_key(self, request, view):
-        ident = self.get_ident(request)
-        return self.cache_format % {'scope': self.scope, 'ident': ident}
 
 
 class GenreSerializer(serializers.Serializer):
@@ -113,7 +106,7 @@ def _filtered_products(params):
 
     category_slug = params.get('category')
     tag_slug = params.get('tag')
-    q = params.get('q')
+    q = (params.get('q') or '').strip()[:200]
 
     # Default browse is games-only; an explicit category/tag/query may reach apps.
     if not (category_slug or tag_slug or (q or '').strip()):
@@ -131,11 +124,22 @@ def _filtered_products(params):
             Q(tags__name__icontains=q)
         ).distinct()
 
-    min_price = params.get('min_price')
-    if min_price:
+    def price_value(raw):
+        if raw in (None, ''):
+            return None
+        try:
+            value = Decimal(str(raw))
+        except (InvalidOperation, TypeError, ValueError):
+            return None
+        if not value.is_finite() or value < 0 or value > Decimal('99999999.99'):
+            return None
+        return value
+
+    min_price = price_value(params.get('min_price'))
+    if min_price is not None:
         products = products.filter(price__gte=min_price)
-    max_price = params.get('max_price')
-    if max_price:
+    max_price = price_value(params.get('max_price'))
+    if max_price is not None:
         products = products.filter(price__lte=max_price)
 
     if params.get('in_stock_only'):
@@ -144,9 +148,12 @@ def _filtered_products(params):
         products = products.filter(discount_price__isnull=False)
 
     sort_by = params.get('sort_by', '-created_at')
-    allowed_sorts = ['-created_at', 'name', '-name', 'price', '-price', '-is_featured', 'newest']
-    if sort_by in allowed_sorts:
-        products = products.order_by(sort_by)
+    sort_map = {
+        '-created_at': ('-created_at',), 'newest': ('-published_at',),
+        'name': ('name',), '-name': ('-name',), 'price': ('price',),
+        '-price': ('-price',), '-is_featured': ('-is_featured', '-created_at'),
+    }
+    products = products.order_by(*sort_map.get(sort_by, sort_map['-created_at']))
 
     return products
 
@@ -154,7 +161,7 @@ def _filtered_products(params):
 
 @api_view(['GET'])
 def search(request):
-    q = (request.GET.get('q') or '').strip()
+    q = (request.GET.get('q') or '').strip()[:200]
     products = Product.objects.filter(is_active=True).prefetch_related('images', 'tags')
     if q:
         products = products.filter(Q(name__icontains=q) | Q(short_description__icontains=q))[:20]
@@ -229,8 +236,7 @@ def health(request):
         cache_ok = False
 
     healthy = db_ok and cache_ok
-    return Response({
-        'status': 'ok' if healthy else 'degraded',
-        'database': db_ok,
-        'cache': cache_ok,
-    }, status=200 if healthy else 503)
+    payload = {'status': 'ok' if healthy else 'degraded'}
+    if settings.DEBUG or (request.user.is_authenticated and request.user.is_staff):
+        payload.update({'database': db_ok, 'cache': cache_ok})
+    return Response(payload, status=200 if healthy else 503)

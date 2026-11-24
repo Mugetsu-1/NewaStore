@@ -7,20 +7,23 @@ from io import BytesIO
 logger = logging.getLogger(__name__)
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import strip_tags
 
+from .security import get_client_ip as _security_client_ip
 
-def _absolute(path):
+
+def absolute_site_url(path):
     base = getattr(settings, 'SITE_BASE_URL', 'http://localhost:8000').rstrip('/')
     return f"{base}{path}"
 
 
 def generate_order_number():
-    return f"ORD-{uuid.uuid4().hex[:10].upper()}"
+    return f"ORD-{uuid.uuid4().hex.upper()}"
 
 
 def calculate_tax(subtotal, rate=None):
@@ -31,15 +34,16 @@ def calculate_tax(subtotal, rate=None):
 
 
 def get_client_ip(request):
-    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-    if x_forwarded_for:
-        return x_forwarded_for.split(',')[0].strip()
-    return request.META.get('REMOTE_ADDR')
+    return _security_client_ip(request)
 
 
 def send_templated_email(subject, template_name, context, to_emails, from_email=None):
     if isinstance(to_emails, str):
         to_emails = [to_emails]
+    to_emails = [address for address in to_emails if address]
+    if not to_emails:
+        return 0
+    subject = ' '.join(str(subject).splitlines())[:998]
     from_email = from_email or getattr(settings, 'DEFAULT_FROM_EMAIL', 'newastore8@gmail.com')
     html_content = render_to_string(template_name, context)
     text_content = strip_tags(html_content)
@@ -48,7 +52,9 @@ def send_templated_email(subject, template_name, context, to_emails, from_email=
     try:
         msg.send(fail_silently=False)
     except Exception:
-        logger.exception('Email send failed (subject=%r, to=%s)', subject, to_emails)
+        logger.exception('Email send failed (subject=%r, recipient_count=%d)', subject, len(to_emails))
+        return 0
+    return 1
 
 
 def send_order_confirmation(order):
@@ -73,7 +79,11 @@ def send_order_status_update(order):
 
 def send_payment_receipt(order):
     """Receipt sent the moment a payment is captured by any gateway."""
-    context = {'order': order, 'order_url': _absolute(reverse('order_detail', args=[order.order_number]))}
+    order_url = (
+        absolute_site_url(reverse('order_detail', args=[order.order_number]))
+        if order.user_id else ''
+    )
+    context = {'order': order, 'order_url': order_url}
     send_templated_email(
         f"Payment received — {order.order_number}",
         'emails/payment_receipt.html',
@@ -87,7 +97,7 @@ def send_welcome_email(user):
     context = {
         'user': user,
         'total_products': Product.objects.filter(is_active=True).count(),
-        'home_url': _absolute(reverse('home')),
+        'home_url': absolute_site_url(reverse('home')),
     }
     send_templated_email(
         'Welcome to NewaStore!',
@@ -95,6 +105,32 @@ def send_welcome_email(user):
         context,
         [user.email],
     )
+
+
+def send_email_verification(user):
+    """Send a canonical, signed one-time account activation link."""
+    from django.contrib.auth.tokens import default_token_generator
+    from django.utils.encoding import force_bytes
+    from django.utils.http import urlsafe_base64_encode
+
+    uid = urlsafe_base64_encode(force_bytes(user.pk))
+    token = default_token_generator.make_token(user)
+    verify_url = absolute_site_url(
+        reverse('verify_email', kwargs={'uidb64': uid, 'token': token})
+    )
+    return send_templated_email(
+        'Verify your NewaStore email address',
+        'emails/verify_email.html',
+        {'user': user, 'verify_url': verify_url},
+        [user.email],
+    )
+
+
+def _send_payment_emails(order_id):
+    from .models import Order
+    order = Order.objects.prefetch_related('items').get(pk=order_id)
+    send_order_status_update(order)
+    send_payment_receipt(order)
 
 
 def mark_order_paid(order, gateway='', txn_id=''):
@@ -106,25 +142,134 @@ def mark_order_paid(order, gateway='', txn_id=''):
     """
     from django.db import transaction
     from django.utils import timezone
+    from .models import Order
 
-    if order.payment_status == 'paid':
-        return order
+    order_id = order.pk if hasattr(order, 'pk') else order
 
     with transaction.atomic():
+        order = Order.objects.select_for_update().get(pk=order_id)
+        if order.payment_status == 'paid':
+            return order
+        if order.inventory_released or order.status in {'cancelled', 'refunded'}:
+            raise ValidationError(
+                'This order was cancelled or refunded and cannot be fulfilled automatically.'
+            )
         if txn_id:
-            order.payment_transaction_id = txn_id
+            order.payment_transaction_id = str(txn_id)[:100]
         if gateway:
             order.payment_method = gateway
-        if order.payment_status != 'paid':
-            order.payment_status = 'paid'
+        order.payment_status = 'paid'
         if order.status != 'confirmed':
             order.status = 'confirmed'
             order.confirmed_at = timezone.now()
         order.save()
-        send_order_status_update(order)
-        send_payment_receipt(order)
-    order.refresh_from_db()
+        transaction.on_commit(lambda oid=order.pk: _send_payment_emails(oid))
     return order
+
+
+def release_order_inventory(order):
+    """Idempotently restore reserved stock and coupon usage for a cancellation."""
+    from django.db import transaction
+    from django.db.models import F
+    from .models import Coupon, CouponUsage, Order, Product, ProductVariant
+
+    order_id = order.pk if hasattr(order, 'pk') else order
+    with transaction.atomic():
+        locked = Order.objects.select_for_update().prefetch_related('items').get(pk=order_id)
+        if locked.inventory_released:
+            return locked
+        items = list(locked.items.all())
+        product_ids = sorted({item.product_id for item in items if item.product_id})
+        variant_ids = sorted({item.variant_id for item in items if item.variant_id})
+        products = {
+            product.pk: product
+            for product in Product.objects.select_for_update()
+            .filter(pk__in=product_ids).order_by('pk')
+        }
+        # Lock variants in a deterministic order before any stock update.
+        list(
+            ProductVariant.objects.select_for_update()
+            .filter(pk__in=variant_ids).order_by('pk')
+        )
+        for item in items:
+            if not item.product_id:
+                continue
+            product = products.get(item.product_id)
+            if not product or not product.track_inventory:
+                continue
+            try:
+                reserved = int((item.product_snapshot or {}).get(
+                    'inventory_reserved', item.quantity
+                ))
+            except (TypeError, ValueError):
+                reserved = item.quantity
+            reserved = max(0, min(reserved, item.quantity))
+            if not reserved:
+                continue
+            if item.variant_id:
+                ProductVariant.objects.filter(pk=item.variant_id).update(
+                    stock_quantity=F('stock_quantity') + reserved
+                )
+            else:
+                Product.objects.filter(pk=item.product_id).update(
+                    stock_quantity=F('stock_quantity') + reserved
+                )
+        if locked.coupon_id:
+            Coupon.objects.filter(pk=locked.coupon_id, used_count__gt=0).update(
+                used_count=F('used_count') - 1
+            )
+            CouponUsage.objects.filter(order=locked).delete()
+        locked.inventory_released = True
+        locked.save(update_fields=['inventory_released', 'updated_at'])
+        return locked
+
+
+def expire_order_reservation(order, now=None):
+    """Cancel one overdue unpaid reservation and release its resources."""
+    from django.db import transaction
+    from .models import Order, OrderStatusHistory
+
+    order_id = order.pk if hasattr(order, 'pk') else order
+    now = now or timezone.now()
+    with transaction.atomic():
+        locked = Order.objects.select_for_update().get(pk=order_id)
+        if (
+            locked.is_paid or locked.inventory_released
+            or locked.status in {'cancelled', 'completed', 'refunded'}
+            or not locked.payment_expires_at
+            or locked.payment_expires_at > now
+        ):
+            return False
+        previous = locked.status
+        release_order_inventory(locked)
+        Order.objects.filter(pk=locked.pk).update(
+            status='cancelled', updated_at=now
+        )
+        OrderStatusHistory.objects.create(
+            order=locked, status='cancelled',
+            notes=f'Unpaid reservation expired (previous status: {previous})',
+        )
+        return True
+
+
+def expire_stale_orders(limit=25):
+    """Bounded lazy sweep used by checkout in addition to the management command."""
+    from .models import Order
+
+    now = timezone.now()
+    ids = list(
+        Order.objects.filter(
+            payment_expires_at__lte=now,
+            payment_status__in=['pending', 'failed'],
+            inventory_released=False,
+        ).exclude(status__in=['cancelled', 'completed', 'refunded'])
+        .order_by('payment_expires_at')
+        .values_list('pk', flat=True)[:max(1, min(int(limit), 100))]
+    )
+    expired = 0
+    for order_id in ids:
+        expired += int(expire_order_reservation(order_id, now=now))
+    return expired
 
 
 def build_invoice_pdf(order):

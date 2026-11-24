@@ -48,7 +48,9 @@ urlpatterns = [
     path('review/<int:review_id>/helpful/', views.mark_review_helpful, name='mark_review_helpful'),
 
     path('register/', views.register, name='register'),
-    path('login/', auth_views.LoginView.as_view(template_name='registration/login.html'), name='login'),
+    path('verify-email/<uidb64>/<token>/', views.verify_email, name='verify_email'),
+    path('verify-email/resend/', views.resend_verification, name='resend_verification'),
+    path('login/', views.SecureLoginView.as_view(), name='login'),
     path('logout/', auth_views.LogoutView.as_view(), name='logout'),
     path('password-reset/', views.CustomPasswordResetView.as_view(), name='password_reset'),
     path('password-reset/done/', views.CustomPasswordResetDoneView.as_view(), name='password_reset_done'),

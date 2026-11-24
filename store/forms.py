@@ -2,9 +2,10 @@ from django import forms
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
+from django.db.models import Q
 from .payments import _available_payment_method_choices
 from .models import Review, Category, NewsletterSubscriber, ContactMessage, SavedBillingDetail
-from .validators import validate_gmail, validate_nepali_mobile
+from .validators import validate_gmail, validate_nepali_mobile, validate_single_line
 
 GMAIL_WIDGET_ATTRS = {
     'type': 'email',
@@ -26,27 +27,23 @@ class CustomRegisterForm(UserCreationForm):
     email = forms.EmailField(required=True, widget=forms.EmailInput(attrs=GMAIL_WIDGET_ATTRS))
     first_name = forms.CharField(max_length=30, required=True)
     last_name = forms.CharField(max_length=30, required=True)
-    phone = forms.CharField(max_length=20, required=False, widget=forms.TextInput(attrs=PHONE_WIDGET_ATTRS))
 
     class Meta:
         model = User
-        fields = ['username', 'first_name', 'last_name', 'email', 'phone', 'password1', 'password2']
+        fields = ['username', 'first_name', 'last_name', 'email', 'password1', 'password2']
 
     def clean_email(self):
         email = validate_gmail(self.cleaned_data.get('email', ''))
 
-        if User.objects.filter(email=email).exists():
+        if User.objects.filter(Q(email__iexact=email) | Q(username__iexact=email)).exists():
             raise ValidationError("This email is already registered.")
 
         return email
 
-    def clean_phone(self):
-        return validate_nepali_mobile(self.cleaned_data.get('phone', ''))
-
     def clean_username(self):
         username = self.cleaned_data.get('username', '').strip().lower()
         
-        if User.objects.filter(username__iexact=username).exists():
+        if User.objects.filter(Q(username__iexact=username) | Q(email__iexact=username)).exists():
             raise ValidationError("This username is already taken.")
         
         return username
@@ -62,33 +59,23 @@ class CustomRegisterForm(UserCreationForm):
 
 
 class UserProfileForm(forms.ModelForm):
-    phone = forms.CharField(max_length=20, required=False, widget=forms.TextInput(attrs=PHONE_WIDGET_ATTRS))
-    date_of_birth = forms.DateField(required=False, widget=forms.DateInput(attrs={'type': 'date'}))
-
     class Meta:
         model = User
-        fields = ['first_name', 'last_name', 'email']
-        widgets = {
-            'email': forms.EmailInput(attrs=GMAIL_WIDGET_ATTRS),
-        }
-
-    def clean_email(self):
-        email = validate_gmail(self.cleaned_data.get('email', ''))
-        if User.objects.filter(email=email).exclude(pk=self.instance.pk).exists():
-            raise ValidationError("This email is already in use.")
-        return email
-
-    def clean_phone(self):
-        return validate_nepali_mobile(self.cleaned_data.get('phone', ''))
+        fields = ['first_name', 'last_name']
 
 
 class ReviewForm(forms.ModelForm):
+    title = forms.CharField(max_length=200, required=False)
+    comment = forms.CharField(
+        max_length=5000,
+        widget=forms.Textarea(attrs={'rows': 4, 'placeholder': 'Share your experience with this product...'}),
+    )
+
     class Meta:
         model = Review
         fields = ['rating', 'title', 'comment']
         widgets = {
             'rating': forms.Select(choices=[(i, f'{i} Star{"s" if i > 1 else ""}') for i in range(1, 6)]),
-            'comment': forms.Textarea(attrs={'rows': 4, 'placeholder': 'Share your experience with this product...'}),
             'title': forms.TextInput(attrs={'placeholder': 'Summary of your review (optional)'}),
         }
 
@@ -129,7 +116,10 @@ class CheckoutForm(forms.Form):
     ]
     payment_method = forms.ChoiceField(choices=PAYMENT_CHOICES, widget=forms.RadioSelect, initial='esewa')
 
-    order_notes = forms.CharField(widget=forms.Textarea(attrs={'rows': 3}), required=False, label='Order Notes')
+    order_notes = forms.CharField(
+        max_length=2000,
+        widget=forms.Textarea(attrs={'rows': 3}), required=False, label='Order Notes',
+    )
     terms_accepted = forms.BooleanField(required=True, label='I agree to the Terms & Conditions')
     save_details = forms.BooleanField(
         required=False,
@@ -184,12 +174,30 @@ class NewsletterForm(forms.ModelForm):
 
     def clean_email(self):
         email = validate_gmail(self.cleaned_data.get('email', ''))
-        if NewsletterSubscriber.objects.filter(email=email, is_active=True).exists():
+        existing = NewsletterSubscriber.objects.filter(email__iexact=email).first()
+        if existing and existing.is_active:
             raise ValidationError("This email is already subscribed.")
+        if existing:
+            self.instance = existing
         return email
+
+    def save(self, commit=True):
+        subscriber = super().save(commit=False)
+        subscriber.is_active = True
+        subscriber.unsubscribed_at = None
+        if commit:
+            subscriber.save()
+        return subscriber
 
 
 class ContactForm(forms.ModelForm):
+    name = forms.CharField(max_length=100)
+    subject = forms.CharField(max_length=200, validators=[validate_single_line])
+    message = forms.CharField(
+        max_length=5000,
+        widget=forms.Textarea(attrs={'rows': 5, 'placeholder': 'Your message...'}),
+    )
+
     class Meta:
         model = ContactMessage
         fields = ['name', 'email', 'subject', 'message']

@@ -39,6 +39,14 @@
                     <button type="submit" class="btn btn-primary btn-block btn-lg"><i class="fas fa-sign-in-alt"></i> Sign In</button>
                 </form>
                 <p class="text-center mt-3" style="font-size:.9rem">Don't have an account? <a href="{% url 'register' %}" style="color:var(--primary);font-weight:600">Create one</a></p>
+                <details class="mt-3">
+                    <summary class="text-muted" style="cursor:pointer;font-size:.85rem">Resend verification email</summary>
+                    <form method="post" action="{% url 'resend_verification' %}" class="auth-form mt-2">
+                        {% csrf_token %}
+                        <input type="email" name="email" class="form-control" placeholder="you@gmail.com" required>
+                        <button type="submit" class="btn btn-outline btn-block mt-1">Send verification link</button>
+                    </form>
+                </details>
             </div>
         </div>
     </div>

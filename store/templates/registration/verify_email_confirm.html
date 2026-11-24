@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="auth-wrap">
+  <div class="flex-center" style="padding:48px 24px;min-height:60vh">
+    <div class="auth-card">
+      <h1>Verify your email</h1>
+      <p>Confirm activation for <strong>{{ verification_user.email }}</strong>.</p>
+      <div class="card-box">
+        <form method="post" action="{% url 'verify_email' uidb64=uidb64 token=token %}" class="auth-form">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-primary btn-block btn-lg">Activate account</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

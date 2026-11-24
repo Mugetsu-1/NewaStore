@@ -41,3 +41,8 @@ def cart_context(request):
     except Exception:
         cart = None
     return {'cart': cart}
+
+
+def security_context(request):
+    """Expose only the per-response CSP nonce required by trusted scripts."""
+    return {'csp_nonce': getattr(request, 'csp_nonce', '')}

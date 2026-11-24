@@ -1,4 +1,5 @@
 import csv
+import logging
 from decimal import Decimal
 
 from django.conf import settings
@@ -7,13 +8,25 @@ from django.core.mail import send_mail
 from django.db.models import Sum
 from django.http import HttpResponse
 from django.utils.html import format_html
-from django.utils.safestring import mark_safe
+from django.utils import timezone
+from .utils import mark_order_paid, release_order_inventory
 from .models import (
     Category, Tag, Product, ProductImage, ProductVariant, Review, ReviewImage,
     Coupon, CouponUsage, Cart, CartItem, Wishlist, WishlistItem,
     Order, OrderItem, OrderStatusHistory, NewsletterSubscriber,
     ContactMessage, SiteSettings, SavedBillingDetail
 )
+
+
+logger = logging.getLogger(__name__)
+
+
+def csv_safe(value):
+    """Prevent spreadsheet formula execution in exported, user-controlled cells."""
+    text = '' if value is None else str(value)
+    if text.lstrip().startswith(('=', '+', '-', '@')):
+        return "'" + text
+    return text
 
 
 class ProductImageInline(admin.TabularInline):
@@ -132,8 +145,8 @@ class ProductAdmin(admin.ModelAdmin):
 
     def is_in_stock(self, obj):
         if obj.is_in_stock:
-            return mark_safe('<span style="color: green;">✓ In Stock</span>')
-        return mark_safe('<span style="color: red;">✗ Out of Stock</span>')
+            return format_html('<span style="color: green;">{}</span>', '✓ In Stock')
+        return format_html('<span style="color: red;">{}</span>', '✗ Out of Stock')
     is_in_stock.short_description = 'Stock Status'
 
 
@@ -144,9 +157,11 @@ class ProductAdmin(admin.ModelAdmin):
         writer.writerow(['ID', 'Name', 'Slug', 'Category', 'Price', 'Discount',
                          'Current', 'Steam App ID', 'Source', 'Created'])
         for p in queryset.select_related('category'):
-            writer.writerow([p.id, p.name, p.slug, p.category.name if p.category else '',
-                             p.price, p.discount_price or '', p.current_price,
-                             p.steam_app_id or '', p.data_source, p.created_at.isoformat()])
+            writer.writerow([csv_safe(value) for value in [
+                p.id, p.name, p.slug, p.category.name if p.category else '',
+                p.price, p.discount_price or '', p.current_price,
+                p.steam_app_id or '', p.data_source, p.created_at.isoformat(),
+            ]])
         return response
     export_products_csv.short_description = 'Export selected products as CSV'
 
@@ -268,11 +283,15 @@ class OrderAdmin(admin.ModelAdmin):
                     'total', 'created_at']
     list_filter = ['status', 'payment_status', 'payment_method', 'created_at']
     search_fields = ['order_number', 'user__username', 'guest_email', 'guest_phone', 'billing_address__full_name']
-    list_editable = ['status', 'payment_status']
+    list_editable = []
     list_select_related = ['user', 'coupon']
     inlines = [OrderItemInline, OrderStatusHistoryInline]
-    readonly_fields = ['order_number', 'created_at', 'updated_at', 'confirmed_at',
-                       'ip_address', 'user_agent']
+    readonly_fields = [
+        'order_number', 'status', 'payment_status', 'payment_transaction_id',
+        'payment_method', 'subtotal', 'discount_amount', 'tax_amount', 'total',
+        'coupon', 'created_at', 'updated_at', 'confirmed_at',
+        'ip_address', 'user_agent',
+    ]
     fieldsets = (
         ('Order Information', {
             'fields': ('order_number', 'user', 'guest_email', 'guest_phone', 'status', 'payment_status', 'payment_method', 
@@ -295,31 +314,100 @@ class OrderAdmin(admin.ModelAdmin):
         }),
     )
 
-    actions = ['mark_confirmed', 'mark_processing', 'mark_completed', 'mark_cancelled', 'export_orders_csv']
+    actions = [
+        'mark_confirmed', 'mark_processing', 'mark_completed', 'mark_cancelled',
+        'settle_bank_payment', 'export_orders_csv',
+    ]
+
+    def has_settle_order_payment_permission(self, request):
+        return request.user.has_perm('store.settle_order_payment')
+
+    @admin.action(
+        description='Settle selected bank-transfer payments',
+        permissions=['settle_order_payment'],
+    )
+    def settle_bank_payment(self, request, queryset):
+        settled = skipped = 0
+        for order in queryset:
+            if (
+                order.payment_method not in {'nay_bank', 'bank_transfer'}
+                or order.is_paid or order.inventory_released
+                or order.status in {'cancelled', 'refunded'}
+            ):
+                skipped += 1
+                continue
+            mark_order_paid(
+                order,
+                gateway=order.payment_method,
+                txn_id=f'ADMIN-{order.pk}-{timezone.now().strftime("%Y%m%d%H%M%S%f")}',
+            )
+            history_id = OrderStatusHistory.objects.filter(
+                order=order, status='confirmed', created_by__isnull=True,
+            ).order_by('-created_at').values_list('pk', flat=True).first()
+            if history_id:
+                OrderStatusHistory.objects.filter(pk=history_id).update(
+                    created_by=request.user
+                )
+            settled += 1
+        self.message_user(
+            request,
+            f'Settled {settled} bank payment(s); skipped {skipped}.',
+            level=messages.SUCCESS if settled else messages.WARNING,
+        )
 
     def mark_confirmed(self, request, queryset):
-        for order in queryset:
-            order.status = 'confirmed'
-            order.save()
+        self._set_status(request, queryset, 'confirmed', require_paid=True)
     mark_confirmed.short_description = 'Mark as Confirmed'
 
     def mark_processing(self, request, queryset):
-        for order in queryset:
-            order.status = 'processing'
-            order.save()
+        self._set_status(request, queryset, 'processing', require_paid=True)
     mark_processing.short_description = 'Mark as Processing'
 
     def mark_completed(self, request, queryset):
-        for order in queryset:
-            order.status = 'completed'
-            order.save()
+        self._set_status(request, queryset, 'completed', require_paid=True)
     mark_completed.short_description = 'Mark as Completed'
 
     def mark_cancelled(self, request, queryset):
+        changed = skipped = 0
         for order in queryset:
-            order.status = 'cancelled'
-            order.save()
+            if order.is_paid or order.status in {'cancelled', 'completed', 'refunded'}:
+                skipped += 1
+                continue
+            release_order_inventory(order)
+            previous = order.status
+            Order.objects.filter(pk=order.pk).update(
+                status='cancelled', updated_at=timezone.now()
+            )
+            OrderStatusHistory.objects.create(
+                order=order, status='cancelled', created_by=request.user,
+                notes=f'Status changed from {previous} to cancelled in admin',
+            )
+            changed += 1
+        self.message_user(
+            request, f'Cancelled {changed} unpaid order(s); skipped {skipped}.',
+            level=messages.SUCCESS if changed else messages.WARNING,
+        )
     mark_cancelled.short_description = 'Mark as Cancelled'
+
+    def _set_status(self, request, queryset, target, require_paid=False):
+        changed = skipped = 0
+        for order in queryset:
+            if (require_paid and not order.is_paid) or order.status == target:
+                skipped += 1
+                continue
+            previous = order.status
+            Order.objects.filter(pk=order.pk).update(
+                status=target, updated_at=timezone.now()
+            )
+            OrderStatusHistory.objects.create(
+                order=order, status=target, created_by=request.user,
+                notes=f'Status changed from {previous} to {target} in admin',
+            )
+            changed += 1
+        self.message_user(
+            request, f'Updated {changed} order(s); skipped {skipped}.',
+            level=messages.SUCCESS if changed else messages.WARNING,
+        )
 
 
     def changelist_view(self, request, extra_context=None):
@@ -341,7 +429,7 @@ class OrderAdmin(admin.ModelAdmin):
         writer.writerow(['Order Number', 'Status', 'Payment Method', 'Payment Status', 'Subtotal',
                          'Tax', 'Total', 'Email', 'Created'])
         for order in queryset.select_related('user'):
-            writer.writerow([
+            writer.writerow([csv_safe(value) for value in [
                 order.order_number,
                 order.get_status_display(),
                 order.get_payment_method_display(),
@@ -349,7 +437,7 @@ class OrderAdmin(admin.ModelAdmin):
                 order.subtotal, order.tax_amount, order.total,
                 order.email or '',
                 order.created_at.isoformat(),
-            ])
+            ]])
         return response
     export_orders_csv.short_description = 'Export selected orders as CSV'
 
@@ -394,10 +482,12 @@ class NewsletterSubscriberAdmin(admin.ModelAdmin):
         writer = csv.writer(response)
         writer.writerow(['Email', 'Active', 'Subscribed', 'Unsubscribed', 'Source'])
         for s in queryset:
-            writer.writerow([s.email, s.is_active,
-                             s.subscribed_at.isoformat() if s.subscribed_at else '',
-                             s.unsubscribed_at.isoformat() if s.unsubscribed_at else '',
-                             s.source])
+            writer.writerow([csv_safe(value) for value in [
+                s.email, s.is_active,
+                s.subscribed_at.isoformat() if s.subscribed_at else '',
+                s.unsubscribed_at.isoformat() if s.unsubscribed_at else '',
+                s.source,
+            ]])
         return response
     export_subscribers_csv.short_description = 'Export selected subscribers as CSV'
 
@@ -440,7 +530,8 @@ class SiteSettingsAdmin(admin.ModelAdmin):
                 settings.DEFAULT_FROM_EMAIL, [to], fail_silently=False)
             self.message_user(request, f'Test email sent to {to}.', level=messages.SUCCESS)
         except Exception as exc:
-            self.message_user(request, f'SMTP send failed: {exc}', level=messages.ERROR)
+            logger.exception('Admin SMTP test failed')
+            self.message_user(request, 'SMTP send failed; check the server logs.', level=messages.ERROR)
     send_test_email_action.short_description = 'Send test email'
 
     fieldsets = (
