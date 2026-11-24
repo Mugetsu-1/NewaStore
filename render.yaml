@@ -3,8 +3,13 @@ services:
     name: newastore
     runtime: python
     plan: free
-    buildCommand: "pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate && python manage.py ensure_ready --skip-import --skip-repair --skip-materialize --skip-audit && (timeout 420 python manage.py classify_catalog || true) && (timeout 600 python manage.py rank_catalog || true)"
-    startCommand: "gunicorn newastore.wsgi:application --bind 0.0.0.0:$PORT"
+    buildCommand: "pip install --require-hashes -r requirements.lock && python manage.py collectstatic --noinput && python manage.py migrate && python manage.py ensure_ready --skip-import --skip-repair --skip-materialize --skip-audit && (timeout 420 python manage.py classify_catalog || true) && (timeout 600 python manage.py rank_catalog || true)"
+    startCommand: >-
+      gunicorn newastore.wsgi:application --bind 0.0.0.0:$PORT
+      --workers 2 --threads 4 --timeout 30 --graceful-timeout 30 --keep-alive 5
+      --max-requests 1000 --max-requests-jitter 100
+      --limit-request-line 4094 --limit-request-fields 100 --limit-request-field_size 8190
+      --access-logfile - --error-logfile - --access-logformat '%(m)s %(s)s %(L)s'
     envVars:
       - key: DATABASE_URL
         sync: false
@@ -28,15 +33,31 @@ services:
         sync: false
       - key: DEFAULT_FROM_EMAIL
         sync: false
-      - key: DJANGO_SUPERUSER_USERNAME
+      - key: ESEWA_PRODUCT_CODE
         sync: false
-      - key: DJANGO_SUPERUSER_EMAIL
+      - key: ESEWA_SECRET_KEY
         sync: false
-      - key: DJANGO_SUPERUSER_PASSWORD
+      - key: ESEWA_FORM_URL
         sync: false
-      - key: DEMO_USER_USERNAME
+      - key: ESEWA_STATUS_URL
         sync: false
-      - key: DEMO_USER_EMAIL
+      - key: ESEWA_SIMULATE
+        value: "False"
+      - key: ESEWA_VERIFY_STATUS
+        value: "True"
+      - key: BANK_TRANSFER_ENABLED
+        value: "False"
+      - key: BANK_TRANSFER_BANK_NAME
         sync: false
-      - key: DEMO_USER_PASSWORD
+      - key: BANK_TRANSFER_ACCOUNT_NAME
         sync: false
+      - key: BANK_TRANSFER_ACCOUNT_NUMBER
+        sync: false
+      - key: BANK_TRANSFER_BRANCH
+        sync: false
+      - key: BANK_TRANSFER_SWIFT
+        sync: false
+      - key: DJANGO_TRUST_X_FORWARDED_PROTO
+        value: "True"
+      - key: DJANGO_TRUST_X_FORWARDED_FOR
+        value: "True"
