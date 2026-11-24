@@ -2,16 +2,29 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.urls import reverse
 from django.core.validators import MinValueValidator, MaxValueValidator
+from django.core.exceptions import ValidationError
 from django.utils.text import slugify
 from django.conf import settings
+from django.db.models.functions import Lower
 import uuid
+
+from .security import validate_artwork_url
+from .validators import (
+    IMAGE_EXTENSION_VALIDATOR,
+    validate_analytics_id,
+    validate_https_url,
+    validate_image_upload,
+)
 
 
 class Category(models.Model):
     name = models.CharField(max_length=100, unique=True)
     slug = models.SlugField(max_length=120, unique=True, blank=True)
     description = models.TextField(blank=True)
-    image = models.ImageField(upload_to='categories/', blank=True, null=True)
+    image = models.ImageField(
+        upload_to='categories/', blank=True, null=True,
+        validators=[IMAGE_EXTENSION_VALIDATOR, validate_image_upload],
+    )
     parent = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True, related_name='children')
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -88,7 +101,10 @@ class Product(models.Model):
 
     steam_app_id = models.PositiveBigIntegerField(null=True, blank=True, unique=True,
                                                   help_text="Steam appid — used as import/upsert key")
-    external_url = models.URLField(blank=True, help_text="Store page for this deal")
+    external_url = models.URLField(
+        blank=True, validators=[validate_https_url],
+        help_text="Store page for this deal",
+    )
     metacritic_score = models.PositiveSmallIntegerField(null=True, blank=True)
     DATA_SOURCES = [
         ('manual', 'Manual'),
@@ -156,6 +172,17 @@ class Product(models.Model):
             models.Index(fields=['is_active', 'product_type']),
             models.Index(fields=['product_type', 'owners']),
         ]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(price__gte=0), name='product_price_nonnegative'),
+            models.CheckConstraint(
+                condition=models.Q(discount_price__isnull=True) | models.Q(discount_price__gte=0),
+                name='product_discount_nonnegative',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(discount_price__isnull=True) | models.Q(discount_price__lte=models.F('price')),
+                name='product_discount_lte_price',
+            ),
+        ]
 
     def __str__(self):
         return self.name
@@ -204,11 +231,16 @@ class Product(models.Model):
 
 class ProductImage(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='images')
-    image = models.ImageField(upload_to='products/', blank=True,
-                              help_text="Local file (downloaded). Optional when external_url is set.")
+    image = models.ImageField(
+        upload_to='products/', blank=True,
+        validators=[IMAGE_EXTENSION_VALIDATOR, validate_image_upload],
+        help_text="Local file (downloaded). Optional when external_url is set.",
+    )
     external_url = models.URLField(max_length=500, blank=True,
+                                   validators=[validate_artwork_url],
                                    help_text="Hotlinked image (e.g. Steam CDN capsule art)")
     thumbnail = models.ImageField(upload_to='artwork/thumbs/', blank=True,
+                                  validators=[IMAGE_EXTENSION_VALIDATOR, validate_image_upload],
                                   help_text="Generated card thumbnail (WebP). "
                                             "Materialized from external_url by "
                                             "'materialize_images'.")
@@ -232,7 +264,11 @@ class ProductImage(models.Model):
     def src_url(self):
         """Full-size art: hotlinked URL if set, otherwise the local file; '' when neither."""
         if self.external_url:
-            return self.external_url
+            try:
+                validate_artwork_url(self.external_url)
+                return self.external_url
+            except ValidationError:
+                pass
         if self.image:
             return self.image.url
         return ''
@@ -249,7 +285,11 @@ class ProductImage(models.Model):
         loads straight from the source CDN instead of a missing local file.
         """
         if getattr(settings, 'SERVE_REMOTE_ARTWORK', False) and self.external_url:
-            return self.external_url
+            try:
+                validate_artwork_url(self.external_url)
+                return self.external_url
+            except ValidationError:
+                pass
         if self.thumbnail:
             return self.thumbnail.url
         return self.src_url
@@ -271,7 +311,11 @@ class ProductImage(models.Model):
         placeholder. Leave it unset locally to keep the instant local-only path.
         """
         if getattr(settings, 'SERVE_REMOTE_ARTWORK', False) and self.external_url:
-            return self.external_url
+            try:
+                validate_artwork_url(self.external_url)
+                return self.external_url
+            except ValidationError:
+                pass
         if self.thumbnail:
             return self.thumbnail.url
         if self.image:
@@ -328,6 +372,12 @@ class Review(models.Model):
     class Meta:
         ordering = ['-created_at']
         unique_together = ['product', 'user']
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(rating__gte=1, rating__lte=5),
+                name='review_rating_1_to_5',
+            ),
+        ]
 
     def __str__(self):
         return f"{self.product.name} - {self.user.username} - {self.rating}/5"
@@ -335,8 +385,22 @@ class Review(models.Model):
 
 class ReviewImage(models.Model):
     review = models.ForeignKey(Review, on_delete=models.CASCADE, related_name='images')
-    image = models.ImageField(upload_to='reviews/')
+    image = models.ImageField(
+        upload_to='reviews/',
+        validators=[IMAGE_EXTENSION_VALIDATOR, validate_image_upload],
+    )
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class ReviewHelpfulVote(models.Model):
+    review = models.ForeignKey(Review, on_delete=models.CASCADE, related_name='helpful_vote_records')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='review_helpful_votes')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['review', 'user'], name='unique_review_helpful_user'),
+        ]
 
 
 class Coupon(models.Model):
@@ -371,11 +435,25 @@ class Coupon(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(Lower('code'), name='unique_coupon_code_ci'),
+            models.CheckConstraint(condition=models.Q(discount_value__gt=0), name='coupon_value_positive'),
+            models.CheckConstraint(condition=models.Q(minimum_amount__gte=0), name='coupon_minimum_nonnegative'),
+            models.CheckConstraint(
+                condition=models.Q(maximum_discount__isnull=True) | models.Q(maximum_discount__gt=0),
+                name='coupon_maximum_positive',
+            ),
+            models.CheckConstraint(condition=models.Q(valid_until__gt=models.F('valid_from')), name='coupon_valid_window'),
+            models.CheckConstraint(
+                condition=~models.Q(discount_type='percentage') | models.Q(discount_value__lte=100),
+                name='coupon_percentage_lte_100',
+            ),
+        ]
 
     def __str__(self):
         return f"{self.code} - {self.name}"
 
-    def is_valid(self, user=None, cart_total=0):
+    def is_valid(self, user=None, cart_total=0, cart_items=None):
         from django.utils import timezone
         now = timezone.now()
         
@@ -389,20 +467,43 @@ class Coupon(models.Model):
             return False, "Coupon usage limit reached"
         if cart_total < self.minimum_amount:
             return False, f"Minimum order amount of {self.minimum_amount} required"
-        if user is not None and getattr(user, 'is_authenticated', False) and self.usage_limit_per_user:
+        if self.usage_limit_per_user:
+            if user is None or not getattr(user, 'is_authenticated', False):
+                return False, "Sign in to use this coupon"
             user_usage = CouponUsage.objects.filter(coupon=self, user=user).count()
             if user_usage >= self.usage_limit_per_user:
                 return False, "You have already used this coupon"
+        if cart_items is not None and self.eligible_subtotal(cart_items) <= 0:
+            return False, "This coupon does not apply to the items in your cart"
         return True, "Valid"
 
-    def calculate_discount(self, cart_total):
+    def eligible_subtotal(self, cart_items):
+        """Subtotal of non-excluded items covered by this coupon's scope."""
+        applicable_products = set(self.applicable_products.values_list('id', flat=True))
+        applicable_categories = set(self.applicable_categories.values_list('id', flat=True))
+        excluded_products = set(self.excluded_products.values_list('id', flat=True))
+        scoped = bool(applicable_products or applicable_categories)
+        total = 0
+        for item in cart_items:
+            product = item.product
+            if product.id in excluded_products:
+                continue
+            if scoped and not (
+                product.id in applicable_products or product.category_id in applicable_categories
+            ):
+                continue
+            total += item.total_price
+        return total
+
+    def calculate_discount(self, cart_total, eligible_total=None):
+        discount_base = cart_total if eligible_total is None else min(cart_total, eligible_total)
         if self.discount_type == 'percentage':
-            discount = (cart_total * self.discount_value) / 100
+            discount = (discount_base * self.discount_value) / 100
             if self.maximum_discount:
                 discount = min(discount, self.maximum_discount)
             return discount
         elif self.discount_type == 'fixed':
-            return min(self.discount_value, cart_total)
+            return min(self.discount_value, discount_base)
         return 0
 
 
@@ -440,9 +541,13 @@ class Cart(models.Model):
     @property
     def discount_amount(self):
         if self.coupon:
-            valid, _ = self.coupon.is_valid(self.user, self.subtotal)
+            items = list(self.items.select_related('product'))
+            subtotal = sum(item.total_price for item in items)
+            valid, _ = self.coupon.is_valid(self.user, subtotal, items)
             if valid:
-                return self.coupon.calculate_discount(self.subtotal)
+                return self.coupon.calculate_discount(
+                    subtotal, self.coupon.eligible_subtotal(items)
+                )
         return 0
 
     @property
@@ -459,7 +564,20 @@ class CartItem(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        unique_together = ['cart', 'product', 'variant']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['cart', 'product'], condition=models.Q(variant__isnull=True),
+                name='unique_cart_product_without_variant',
+            ),
+            models.UniqueConstraint(
+                fields=['cart', 'product', 'variant'], condition=models.Q(variant__isnull=False),
+                name='unique_cart_product_variant',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(quantity__gte=1, quantity__lte=99),
+                name='cart_quantity_1_to_99',
+            ),
+        ]
 
     def __str__(self):
         return f"{self.quantity} x {self.product.name}"
@@ -491,7 +609,16 @@ class WishlistItem(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = ['wishlist', 'product', 'variant']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['wishlist', 'product'], condition=models.Q(variant__isnull=True),
+                name='unique_wishlist_product_without_variant',
+            ),
+            models.UniqueConstraint(
+                fields=['wishlist', 'product', 'variant'], condition=models.Q(variant__isnull=False),
+                name='unique_wishlist_product_variant',
+            ),
+        ]
 
     def __str__(self):
         return f"{self.product.name} in {self.wishlist.user.username}'s wishlist"
@@ -525,7 +652,7 @@ class Order(models.Model):
     guest_email = models.EmailField(blank=True)
     guest_phone = models.CharField(max_length=20, blank=True)
     
-    order_number = models.CharField(max_length=20, unique=True, editable=False)
+    order_number = models.CharField(max_length=40, unique=True, editable=False)
     
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS_CHOICES, default='pending')
@@ -550,6 +677,8 @@ class Order(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     confirmed_at = models.DateTimeField(null=True, blank=True)
+    payment_expires_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    inventory_released = models.BooleanField(default=False, editable=False)
 
     class Meta:
         ordering = ['-created_at']
@@ -558,13 +687,44 @@ class Order(models.Model):
             models.Index(fields=['user', 'status']),
             models.Index(fields=['status', 'created_at']),
         ]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(subtotal__gte=0), name='order_subtotal_nonnegative'),
+            models.CheckConstraint(condition=models.Q(discount_amount__gte=0), name='order_discount_nonnegative'),
+            models.CheckConstraint(
+                condition=models.Q(discount_amount__lte=models.F('subtotal')),
+                name='order_discount_lte_subtotal',
+            ),
+            models.CheckConstraint(condition=models.Q(tax_amount__gte=0), name='order_tax_nonnegative'),
+            models.CheckConstraint(condition=models.Q(total__gte=0), name='order_total_nonnegative'),
+            models.CheckConstraint(
+                condition=models.Q(
+                    total=models.F('subtotal') - models.F('discount_amount') + models.F('tax_amount')
+                ),
+                name='order_total_matches_components',
+            ),
+            models.CheckConstraint(
+                condition=(
+                    ~models.Q(status__in=['confirmed', 'processing', 'completed'])
+                    | models.Q(payment_status='paid')
+                ),
+                name='active_fulfillment_requires_payment',
+            ),
+            models.UniqueConstraint(
+                fields=['payment_method', 'payment_transaction_id'],
+                condition=~models.Q(payment_transaction_id=''),
+                name='unique_gateway_transaction_id',
+            ),
+        ]
+        permissions = [
+            ('settle_order_payment', 'Can settle order payments'),
+        ]
 
     def __str__(self):
         return f"Order {self.order_number}"
 
     def save(self, *args, **kwargs):
         if not self.order_number:
-            self.order_number = f"ORD-{uuid.uuid4().hex[:10].upper()}"
+            self.order_number = f"ORD-{uuid.uuid4().hex.upper()}"
         super().save(*args, **kwargs)
 
     @property
@@ -581,7 +741,7 @@ class Order(models.Model):
 
     @property
     def can_cancel(self):
-        return self.status in ['pending', 'confirmed', 'processing']
+        return not self.is_paid and self.status in ['pending', 'confirmed', 'processing']
 
     @property
     def is_paid(self):
@@ -605,6 +765,17 @@ class OrderItem(models.Model):
     product_snapshot = models.JSONField(default=dict, blank=True)
     
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(condition=models.Q(quantity__gte=1), name='order_item_quantity_positive'),
+            models.CheckConstraint(condition=models.Q(unit_price__gte=0), name='order_item_unit_price_nonnegative'),
+            models.CheckConstraint(condition=models.Q(total_price__gte=0), name='order_item_total_nonnegative'),
+            models.CheckConstraint(
+                condition=models.Q(total_price=models.F('unit_price') * models.F('quantity')),
+                name='order_item_total_matches_quantity',
+            ),
+        ]
 
     def __str__(self):
         return f"{self.quantity} x {self.product_name}"
@@ -659,30 +830,41 @@ class ContactMessage(models.Model):
 class SiteSettings(models.Model):
     site_name = models.CharField(max_length=100, default='NewaStore')
     site_tagline = models.CharField(max_length=200, blank=True)
-    logo = models.ImageField(upload_to='settings/', blank=True, null=True)
-    favicon = models.ImageField(upload_to='settings/', blank=True, null=True)
+    logo = models.ImageField(
+        upload_to='settings/', blank=True, null=True,
+        validators=[IMAGE_EXTENSION_VALIDATOR, validate_image_upload],
+    )
+    favicon = models.ImageField(
+        upload_to='settings/', blank=True, null=True,
+        validators=[IMAGE_EXTENSION_VALIDATOR, validate_image_upload],
+    )
     
     email = models.EmailField(blank=True)
     phone = models.CharField(max_length=20, blank=True)
     address = models.TextField(blank=True)
     
-    social_facebook = models.URLField(blank=True)
-    social_twitter = models.URLField(blank=True)
-    social_instagram = models.URLField(blank=True)
-    social_youtube = models.URLField(blank=True)
-    social_linkedin = models.URLField(blank=True)
+    social_facebook = models.URLField(blank=True, validators=[validate_https_url])
+    social_twitter = models.URLField(blank=True, validators=[validate_https_url])
+    social_instagram = models.URLField(blank=True, validators=[validate_https_url])
+    social_youtube = models.URLField(blank=True, validators=[validate_https_url])
+    social_linkedin = models.URLField(blank=True, validators=[validate_https_url])
     
     meta_title = models.CharField(max_length=60, blank=True)
     meta_description = models.CharField(max_length=160, blank=True)
     meta_keywords = models.CharField(max_length=255, blank=True)
     
-    google_analytics_id = models.CharField(max_length=50, blank=True)
+    google_analytics_id = models.CharField(
+        max_length=50, blank=True, validators=[validate_analytics_id]
+    )
     facebook_pixel_id = models.CharField(max_length=50, blank=True)
     
     maintenance_mode = models.BooleanField(default=False)
     maintenance_message = models.TextField(blank=True)
 
-    tax_rate = models.DecimalField(max_digits=5, decimal_places=2, default=13)
+    tax_rate = models.DecimalField(
+        max_digits=5, decimal_places=2, default=13,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+    )
     currency = models.CharField(max_length=3, default='NPR')
     currency_symbol = models.CharField(max_length=5, default='Rs.')
     
@@ -695,6 +877,12 @@ class SiteSettings(models.Model):
     class Meta:
         verbose_name = "Site Settings"
         verbose_name_plural = "Site Settings"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(tax_rate__gte=0, tax_rate__lte=100),
+                name='site_tax_rate_0_to_100',
+            ),
+        ]
 
     def __str__(self):
         return self.site_name
@@ -731,3 +919,23 @@ class SavedBillingDetail(models.Model):
 
     def __str__(self):
         return f"Billing details for {self.user}"
+
+
+class LoginThrottle(models.Model):
+    """Hashed, database-backed authentication failure counter.
+
+    Keys are HMAC digests of an IP/identifier pair or an IP address; raw login
+    identifiers and IP addresses are deliberately never stored here.
+    """
+
+    key = models.CharField(max_length=64, unique=True)
+    failures = models.PositiveIntegerField(default=0)
+    window_started_at = models.DateTimeField()
+    blocked_until = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['blocked_until']),
+            models.Index(fields=['updated_at']),
+        ]

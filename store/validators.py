@@ -16,14 +16,24 @@ and password reset), so there is deliberately no password helper here.
 """
 
 import re
+from urllib.parse import urlsplit
 
 from django.core.exceptions import ValidationError
+from django.core.validators import FileExtensionValidator
+
+from .security import validate_artwork_url
 
 GMAIL_DOMAIN = "gmail.com"
 
 # Nepal mobile numbers: 10 digits, "9" + {6,7,8} + 8 more.
 #   98x -> NTC / Ncell GSM, 97x -> NTC / Ncell, 96x -> Smart Cell / UTL.
 _NEPALI_MOBILE_RE = re.compile(r"^9[678]\d{8}$")
+_ANALYTICS_ID_RE = re.compile(r"^(?:G-[A-Z0-9]{6,20}|UA-\d{4,12}-\d{1,4})$")
+
+MAX_IMAGE_UPLOAD_BYTES = 5 * 1024 * 1024
+IMAGE_EXTENSION_VALIDATOR = FileExtensionValidator(
+    allowed_extensions=("jpg", "jpeg", "png", "webp", "gif")
+)
 
 
 def normalize_email(value):
@@ -73,3 +83,43 @@ def validate_nepali_mobile(value):
             "97 or 96 (for example 9841234567)."
         )
     return digits
+
+
+def validate_image_upload(value):
+    """Bound image upload size and reject non-image MIME declarations."""
+    if not value:
+        return
+    size = getattr(value, "size", 0) or 0
+    if size > MAX_IMAGE_UPLOAD_BYTES:
+        raise ValidationError("Images must be 5 MB or smaller.")
+    content_type = (getattr(value, "content_type", "") or "").lower()
+    if content_type and content_type not in {
+        "image/jpeg", "image/png", "image/webp", "image/gif"
+    }:
+        raise ValidationError("Upload a JPEG, PNG, WebP, or GIF image.")
+
+
+def validate_analytics_id(value):
+    value = (value or "").strip().upper()
+    if value and not _ANALYTICS_ID_RE.fullmatch(value):
+        raise ValidationError("Enter a valid Google Analytics measurement ID.")
+
+
+def validate_single_line(value):
+    if "\r" in (value or "") or "\n" in (value or ""):
+        raise ValidationError("Line breaks are not allowed in this field.")
+
+
+def validate_https_url(value):
+    if not value:
+        return
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except (TypeError, ValueError) as exc:
+        raise ValidationError("Enter a valid HTTPS URL.") from exc
+    if (
+        parsed.scheme.lower() != 'https' or not parsed.hostname
+        or parsed.username or parsed.password or port not in (None, 443)
+    ):
+        raise ValidationError("Use an HTTPS URL without embedded credentials.")
