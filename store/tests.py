@@ -2,12 +2,18 @@ from decimal import Decimal
 import base64
 import io
 import json
+import os
+import re
 from io import StringIO
+from unittest import mock
+from urllib.parse import urlsplit
 
 from django.conf import settings
 from django.test import TestCase, Client, override_settings
 from django.contrib.auth.models import User
 from django.core import mail
+from django.core.cache import cache
+from django.core.management import call_command
 from django.core.exceptions import ValidationError
 from django.urls import reverse
 from django.utils import timezone
@@ -17,10 +23,12 @@ from .models import (
     Category, Tag, Product, ProductImage, ProductVariant, Review, Coupon,
     Cart, CartItem, Wishlist, Order, OrderItem, OrderStatusHistory,
     NewsletterSubscriber, SiteSettings, ContactMessage,
+    LoginThrottle, ReviewHelpfulVote,
 )
 from .cart import CartManager
 from .utils import mark_order_paid
-from .validators import validate_gmail, validate_nepali_mobile
+from .validators import validate_gmail, validate_nepali_mobile, validate_https_url
+from .security import validate_artwork_url
 
 
 def make_product(**kwargs):
@@ -89,8 +97,14 @@ class CouponTests(TestCase):
         )
 
     def test_valid_coupon(self):
-        valid, _ = self.coupon.is_valid(None, Decimal('500'))
+        user = User.objects.create_user('coupon-user')
+        valid, _ = self.coupon.is_valid(user, Decimal('500'))
         self.assertTrue(valid)
+
+    def test_per_user_coupon_requires_account(self):
+        valid, message = self.coupon.is_valid(None, Decimal('500'))
+        self.assertFalse(valid)
+        self.assertIn('Sign in', message)
 
     def test_below_minimum(self):
         valid, msg = self.coupon.is_valid(None, Decimal('50'))
@@ -192,7 +206,8 @@ class ViewTests(TestCase):
             'password2': 'complexpass123',
         })
         self.assertEqual(response.status_code, 302)
-        self.assertTrue(User.objects.filter(username='newuser').exists())
+        user = User.objects.get(username='newuser')
+        self.assertFalse(user.is_active)
 
     def test_register_rejects_non_gmail_email(self):
         response = self.client.post(reverse('register'), {
@@ -202,24 +217,6 @@ class ViewTests(TestCase):
         })
         self.assertEqual(response.status_code, 200)
         self.assertFalse(User.objects.filter(username='yahoouser').exists())
-
-    def test_register_rejects_bad_phone(self):
-        response = self.client.post(reverse('register'), {
-            'username': 'badphone', 'first_name': 'Bad', 'last_name': 'Phone',
-            'email': 'badphone@gmail.com', 'phone': '1234567890',
-            'password1': 'complexpass123', 'password2': 'complexpass123',
-        })
-        self.assertEqual(response.status_code, 200)
-        self.assertFalse(User.objects.filter(username='badphone').exists())
-
-    def test_register_accepts_nepali_phone_with_country_code(self):
-        response = self.client.post(reverse('register'), {
-            'username': 'goodphone', 'first_name': 'Good', 'last_name': 'Phone',
-            'email': 'goodphone@gmail.com', 'phone': '+977 9841-234567',
-            'password1': 'complexpass123', 'password2': 'complexpass123',
-        })
-        self.assertEqual(response.status_code, 302)
-        self.assertTrue(User.objects.filter(username='goodphone').exists())
 
     def test_newsletter_subscribe(self):
         response = self.client.post(reverse('newsletter_subscribe'), {'email': 'n@gmail.com'})
@@ -360,9 +357,25 @@ class AuthFlowTests(TestCase):
         })
         self.assertEqual(response.status_code, 302)
         user = User.objects.get(username='newgamer')
-        self.assertTrue(user.is_authenticated)
+        self.assertFalse(user.is_active)
+        self.assertNotIn('_auth_user_id', self.client.session)
         self.assertEqual(len(mail.outbox), 1)
-        self.assertIn('Welcome to NewaStore', mail.outbox[0].subject)
+        self.assertIn('Verify your NewaStore email', mail.outbox[0].subject)
+
+        match = re.search(r'https?://[^\s]+/verify-email/[^\s<]+', mail.outbox[0].body)
+        self.assertIsNotNone(match)
+        verify_path = urlsplit(match.group(0)).path
+        response = self.client.get(verify_path)
+        self.assertEqual(response.status_code, 200)
+        user.refresh_from_db()
+        self.assertFalse(user.is_active)
+        response = self.client.post(verify_path)
+        self.assertEqual(response.status_code, 302)
+        user.refresh_from_db()
+        self.assertTrue(user.is_active)
+        self.assertEqual(self.client.session.get('_auth_user_id'), str(user.pk))
+        self.assertEqual(len(mail.outbox), 2)
+        self.assertIn('Welcome to NewaStore', mail.outbox[1].subject)
 
     def test_login_by_username_and_by_email(self):
         User.objects.create_user('gamer1', email='gamer1@example.com', password='Secret123!')
@@ -399,8 +412,9 @@ class PaymentFulfillmentTests(TestCase):
 
     def test_mark_order_paid_is_idempotent(self):
         order = self._make_order()
-        mark_order_paid(order, gateway='esewa', txn_id='esw_test_1')
-        mark_order_paid(order, gateway='esewa', txn_id='esw_test_1')
+        with self.captureOnCommitCallbacks(execute=True):
+            mark_order_paid(order, gateway='esewa', txn_id='esw_test_1')
+            mark_order_paid(order, gateway='esewa', txn_id='esw_test_1')
         order.refresh_from_db()
         self.assertEqual(order.payment_status, 'paid')
         self.assertEqual(order.status, 'confirmed')
@@ -537,7 +551,7 @@ class ApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data['status'], 'ok')
-        self.assertTrue(data['database'])
+        self.assertNotIn('database', data)
 
     def test_search_by_query(self):
         response = self.client.get(reverse('api_search'), {'q': 'Cyber'})
@@ -687,7 +701,7 @@ class RealGatewayTests(TestCase):
             response, reverse('payment_failed', args=[order.order_number]),
             fetch_redirect_response=False)
         order.refresh_from_db()
-        self.assertNotEqual(order.payment_status, 'paid')
+        self.assertEqual(order.payment_status, 'pending')
 
     def test_esewa_verify_is_idempotent_on_paid_order(self):
         self._start_checkout('esewa')
@@ -725,7 +739,7 @@ class RealGatewayTests(TestCase):
         self.assertNotIn('0123456789012', html)
 
 
-@override_settings(ESEWA_SIMULATE=True)
+@override_settings(ESEWA_SIMULATE=True, DEBUG=True)
 class SandboxGatewayTests(TestCase):
     """The public EPAYTEST sandbox completes eSewa in-site.
 
@@ -853,3 +867,289 @@ class CheckoutValidationTests(TestCase):
         order = Order.objects.first()
         self.assertIsNotNone(order)
         self.assertEqual(order.billing_address['phone'], '9841234567')
+
+
+@override_settings(ESEWA_SIMULATE=False, ESEWA_VERIFY_STATUS=False)
+class SecurityRegressionTests(TestCase):
+    """Regression coverage for authorization, payment and browser hardening."""
+
+    def setUp(self):
+        cache.clear()
+        SiteSettings.get_settings()
+        self.product = make_product(name='Secure Game', stock_quantity=10)
+
+    def checkout_payload(self, method='esewa'):
+        return {
+            'billing_full_name': 'Guest Buyer', 'billing_phone': '9800000000',
+            'billing_email': 'guest@gmail.com', 'billing_address_line_1': 'Main St',
+            'billing_address_line_2': '', 'billing_city': 'Kathmandu',
+            'billing_state': 'Bagmati', 'billing_postal_code': '44600',
+            'billing_country': 'Nepal', 'payment_method': method,
+            'order_notes': '', 'terms_accepted': 'on',
+        }
+
+    def place_guest_order(self, method='esewa'):
+        owner = Client()
+        owner.post(reverse('add_to_cart', args=[self.product.id]), {'quantity': 1})
+        response = owner.post(reverse('checkout'), self.checkout_payload(method))
+        self.assertEqual(response.status_code, 302)
+        return owner, Order.objects.get()
+
+    def test_guest_order_pages_are_bound_to_the_checkout_session(self):
+        owner, order = self.place_guest_order()
+        self.assertEqual(
+            owner.get(reverse('order_success', args=[order.order_number])).status_code,
+            200,
+        )
+        attacker = Client()
+        for name in ('order_success', 'payment_failed', 'esewa_checkout'):
+            response = attacker.get(reverse(name, args=[order.order_number]))
+            self.assertEqual(response.status_code, 404, name)
+
+    def test_logged_in_user_cannot_claim_a_guest_order_from_another_session(self):
+        _owner, order = self.place_guest_order()
+        attacker = User.objects.create_user('attacker', password='LongAttackPassword!1')
+        other = Client()
+        other.force_login(attacker)
+        self.assertEqual(
+            other.get(reverse('order_success', args=[order.order_number])).status_code,
+            404,
+        )
+
+    def test_order_numbers_have_128_bits_of_randomness(self):
+        order = Order.objects.create(subtotal=Decimal('1'), total=Decimal('1'))
+        self.assertRegex(order.order_number, r'^ORD-[0-9A-F]{32}$')
+
+    def test_oversized_cart_quantity_is_rejected(self):
+        response = self.client.post(
+            reverse('add_to_cart', args=[self.product.id]), {'quantity': 100},
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(CartItem.objects.exists())
+
+    def test_external_referer_is_not_used_as_a_redirect(self):
+        response = self.client.post(
+            reverse('add_to_cart', args=[self.product.id]), {'quantity': 1},
+            HTTP_REFERER='https://evil.example/phish',
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(response['Location'].startswith('https://evil.example'))
+
+    def test_invalid_payment_callback_cannot_change_order_state(self):
+        _owner, order = self.place_guest_order()
+        payload = {
+            'transaction_code': 'fake', 'status': 'COMPLETE',
+            'total_amount': str(order.total), 'transaction_uuid': order.order_number,
+            'product_code': settings.ESEWA_PRODUCT_CODE,
+            'signed_field_names': (
+                'transaction_code,status,total_amount,transaction_uuid,'
+                'product_code,signed_field_names'
+            ),
+            'signature': 'not-a-valid-signature',
+        }
+        encoded = base64.b64encode(json.dumps(payload).encode()).decode()
+        self.client.get(reverse('esewa_verify'), {'data': encoded})
+        order.refresh_from_db()
+        self.assertEqual(order.payment_status, 'pending')
+
+    def test_signature_must_cover_the_full_required_field_set(self):
+        from .payments import _esewa_signature, verify_esewa_signature
+        payload = {
+            'status': 'COMPLETE',
+            'signed_field_names': 'status',
+        }
+        payload['signature'] = _esewa_signature('status=COMPLETE')
+        self.assertFalse(verify_esewa_signature(payload))
+
+    def test_public_pages_receive_nonce_csp_and_isolation_headers(self):
+        response = self.client.get(reverse('home'))
+        csp = response['Content-Security-Policy']
+        self.assertNotIn("'unsafe-inline'", csp.split('style-src')[0])
+        match = re.search(r"'nonce-([^']+)'", csp)
+        self.assertIsNotNone(match)
+        self.assertContains(response, f'nonce="{match.group(1)}"')
+        self.assertEqual(response['X-Frame-Options'], 'DENY')
+        self.assertIn('camera=()', response['Permissions-Policy'])
+
+    def test_artwork_validator_blocks_ssrf_targets(self):
+        for bad in (
+            'http://shared.fastly.steamstatic.com/image.jpg',
+            'https://127.0.0.1/image.jpg',
+            'https://169.254.169.254/latest/meta-data/',
+            'https://evil.example/image.jpg',
+            'https://user:pass@shared.fastly.steamstatic.com/image.jpg',
+        ):
+            with self.assertRaises(ValidationError, msg=bad):
+                validate_artwork_url(bad)
+        validate_artwork_url(
+            'https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/1/header.jpg'
+        )
+
+    def test_external_links_require_https_without_credentials(self):
+        validate_https_url('https://store.steampowered.com/app/1/')
+        for bad in ('http://example.com', 'https://user:pass@example.com/path'):
+            with self.assertRaises(ValidationError):
+                validate_https_url(bad)
+
+    def test_helpful_vote_is_one_per_user(self):
+        user = User.objects.create_user('voter', password='LongVoterPassword!1')
+        review = Review.objects.create(
+            product=self.product, user=user, rating=5, comment='Good', is_approved=True,
+        )
+        self.client.force_login(user)
+        url = reverse('mark_review_helpful', args=[review.id])
+        self.client.post(url)
+        self.client.post(url)
+        review.refresh_from_db()
+        self.assertEqual(review.helpful_votes, 1)
+        self.assertEqual(ReviewHelpfulVote.objects.filter(review=review).count(), 1)
+
+    def test_profile_post_cannot_replace_verified_email(self):
+        user = User.objects.create_user(
+            'profileuser', email='verified@gmail.com',
+            password='LongProfilePassword!1',
+        )
+        self.client.force_login(user)
+        response = self.client.post(reverse('profile_edit'), {
+            'first_name': 'Updated', 'last_name': 'Name',
+            'email': 'attacker@gmail.com',
+        })
+        self.assertEqual(response.status_code, 302)
+        user.refresh_from_db()
+        self.assertEqual(user.email, 'verified@gmail.com')
+        self.assertEqual(user.first_name, 'Updated')
+
+    def test_cancelling_unpaid_order_restores_inventory(self):
+        user = User.objects.create_user('cancelbuyer', password='LongCancelPassword!1')
+        self.client.force_login(user)
+        self.client.post(reverse('add_to_cart', args=[self.product.id]), {'quantity': 2})
+        self.client.post(reverse('checkout'), self.checkout_payload('nay_bank'))
+        order = Order.objects.get(user=user)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.stock_quantity, 8)
+        self.client.post(reverse('cancel_order', args=[order.order_number]))
+        self.product.refresh_from_db()
+        order.refresh_from_db()
+        self.assertEqual(self.product.stock_quantity, 10)
+        self.assertTrue(order.inventory_released)
+        self.assertEqual(order.status, 'cancelled')
+
+    def test_paid_order_cannot_be_cancelled_by_customer(self):
+        user = User.objects.create_user('paidbuyer', password='LongPaidPassword!1')
+        order = Order.objects.create(
+            user=user, subtotal=Decimal('100'), total=Decimal('100'),
+            payment_status='paid', status='confirmed', payment_method='esewa',
+        )
+        self.client.force_login(user)
+        self.client.post(reverse('cancel_order', args=[order.order_number]))
+        order.refresh_from_db()
+        self.assertEqual(order.status, 'confirmed')
+
+    def test_expired_unpaid_reservation_releases_stock(self):
+        user = User.objects.create_user('expirebuyer', password='LongExpirePassword!1')
+        self.client.force_login(user)
+        self.client.post(reverse('add_to_cart', args=[self.product.id]), {'quantity': 2})
+        self.client.post(reverse('checkout'), self.checkout_payload('nay_bank'))
+        order = Order.objects.get(user=user)
+        Order.objects.filter(pk=order.pk).update(
+            payment_expires_at=timezone.now() - timedelta(seconds=1)
+        )
+        response = self.client.get(reverse('order_success', args=[order.order_number]))
+        self.assertRedirects(response, reverse('cart'), fetch_redirect_response=False)
+        order.refresh_from_db()
+        self.product.refresh_from_db()
+        self.assertEqual(order.status, 'cancelled')
+        self.assertTrue(order.inventory_released)
+        self.assertEqual(self.product.stock_quantity, 10)
+
+    def test_backorder_cancellation_does_not_inflate_stock(self):
+        backorder = make_product(
+            name='Backorder Game', stock_quantity=0, allow_backorder=True,
+        )
+        user = User.objects.create_user('backorderbuyer', password='LongBackorderPassword!1')
+        self.client.force_login(user)
+        self.client.post(reverse('add_to_cart', args=[backorder.id]), {'quantity': 2})
+        self.client.post(reverse('checkout'), self.checkout_payload('nay_bank'))
+        order = Order.objects.get(user=user)
+        backorder.refresh_from_db()
+        self.assertEqual(backorder.stock_quantity, 0)
+        self.client.post(reverse('cancel_order', args=[order.order_number]))
+        backorder.refresh_from_db()
+        self.assertEqual(backorder.stock_quantity, 0)
+
+
+class AuthenticationThrottleTests(TestCase):
+    @override_settings(
+        AUTH_PAIR_FAILURE_LIMIT=3, AUTH_IP_FAILURE_LIMIT=100,
+        AUTH_FAILURE_WINDOW=900, AUTH_BLOCK_DURATION=900,
+    )
+    def test_repeated_failures_block_even_a_correct_password(self):
+        User.objects.create_user(
+            'lockeduser', email='locked@gmail.com', password='CorrectLongPassword!1'
+        )
+        for _ in range(3):
+            self.assertFalse(self.client.login(
+                username='lockeduser', password='wrong-password'
+            ))
+        self.assertFalse(self.client.login(
+            username='lockeduser', password='CorrectLongPassword!1'
+        ))
+        self.assertTrue(LoginThrottle.objects.filter(blocked_until__isnull=False).exists())
+
+    @override_settings(
+        ALLOWED_HOSTS=['testserver', 'alternate.example'],
+        SITE_BASE_URL='https://canonical.example',
+    )
+    def test_password_reset_link_uses_canonical_site_not_host_header(self):
+        User.objects.create_user(
+            'resetcanonical', email='resetcanonical@gmail.com',
+            password='CorrectLongPassword!1',
+        )
+        response = self.client.post(
+            reverse('password_reset'),
+            {'email': 'resetcanonical@gmail.com'},
+            HTTP_HOST='alternate.example',
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('https://canonical.example/', mail.outbox[0].body)
+        self.assertNotIn('alternate.example', mail.outbox[0].body)
+
+
+class BootstrapAccountSecurityTests(TestCase):
+    def run_bootstrap(self):
+        call_command(
+            'ensure_ready', skip_migrate=True, skip_import=True,
+            skip_repair=True, skip_materialize=True, skip_audit=True,
+            stdout=StringIO(),
+        )
+
+    def test_bootstrap_accounts_are_opt_in(self):
+        with mock.patch.dict(os.environ, {
+            'BOOTSTRAP_ACCOUNTS': 'False',
+            'DJANGO_SUPERUSER_USERNAME': 'should-not-exist',
+            'DJANGO_SUPERUSER_EMAIL': 'none@example.com',
+            'DJANGO_SUPERUSER_PASSWORD': 'VeryStrongBootstrapPassword!1',
+        }):
+            self.run_bootstrap()
+        self.assertFalse(User.objects.filter(username='should-not-exist').exists())
+
+    def test_existing_account_is_never_reset_or_elevated(self):
+        user = User.objects.create_user(
+            'existing-admin-name', email='old@example.com',
+            password='OriginalLongPassword!1',
+        )
+        with mock.patch.dict(os.environ, {
+            'BOOTSTRAP_ACCOUNTS': 'True',
+            'DJANGO_SUPERUSER_USERNAME': user.username,
+            'DJANGO_SUPERUSER_EMAIL': 'new@example.com',
+            'DJANGO_SUPERUSER_PASSWORD': 'ReplacementLongPassword!1',
+            'DEMO_USER_PASSWORD': '',
+        }):
+            self.run_bootstrap()
+        user.refresh_from_db()
+        self.assertTrue(user.check_password('OriginalLongPassword!1'))
+        self.assertFalse(user.check_password('ReplacementLongPassword!1'))
+        self.assertFalse(user.is_staff)
+        self.assertFalse(user.is_superuser)

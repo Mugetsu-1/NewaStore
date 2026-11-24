@@ -1,4 +1,10 @@
 import os
+if os.environ.get("NEWASTORE_ALLOW_DB_TEST_SCRIPTS") != "1":
+    raise SystemExit(
+        "Refusing to create/delete records or send test traffic against the configured database. "
+        "Set NEWASTORE_ALLOW_DB_TEST_SCRIPTS=1 only for an isolated staging database."
+    )
+os.environ["DJANGO_EMAIL_BACKEND"] = "django.core.mail.backends.locmem.EmailBackend"
 from dotenv import load_dotenv
 from pathlib import Path
 load_dotenv(Path('.') / '.env')
@@ -9,6 +15,7 @@ from django.test import Client
 from django.contrib.auth.models import User
 from store.models import Product, Order
 from django.core.mail import send_mail
+from django.urls import reverse
 import re
 
 print("=== 1. EMAIL TEST ===")
@@ -105,7 +112,7 @@ if admin_user:
     
     admin_client = Client()
     admin_client.force_login(admin_user)
-    admin_resp = admin_client.get('/admin/')
+    admin_resp = admin_client.get(reverse('admin:index'))
     print(f"Admin page status: {admin_resp.status_code}")
     
     content_lower = admin_resp.content.decode().lower()

@@ -5,7 +5,6 @@ django.setup()
 
 from django.test import Client
 from django.contrib.auth.models import User
-from django.contrib.auth import authenticate
 from store.models import Product, Cart, Order, ProductImage
 import re
 
@@ -15,13 +14,7 @@ if admin_user:
     print(f'Admin: {admin_user.username}')
     print(f'is_staff: {admin_user.is_staff}')
     print(f'is_superuser: {admin_user.is_superuser}')
-    admin_username = os.environ.get('DJANGO_SUPERUSER_USERNAME', 'admin')
-    admin_password = os.environ.get('DJANGO_SUPERUSER_PASSWORD', '')
-    if admin_password:
-        logged_in = authenticate(username=admin_username, password=admin_password)
-        print(f'Login with .env credentials: {logged_in is not None}')
-    else:
-        print('Login check skipped: DJANGO_SUPERUSER_PASSWORD not set in environment')
+    print('Credential login check intentionally skipped (avoids lockout and password reuse).')
 
 print()
 print('=== PRODUCT IMAGES ===')
